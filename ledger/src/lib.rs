@@ -49,7 +49,7 @@ mod tests;
 use console::{
     account::{Address, GraphKey, PrivateKey, ViewKey},
     network::prelude::*,
-    program::{Ciphertext, Entry, Identifier, Literal, Plaintext, ProgramID, Record, StatePath, Value},
+    program::{Ciphertext, Entry, Identifier, Literal, Plaintext, ProgramID, Record, StatePath, StateProofsResponse, Value},
     types::{Field, Group},
 };
 use ledger_authority::Authority;
