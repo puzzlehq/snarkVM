@@ -24,5 +24,10 @@ mod query;
 #[cfg(feature = "query")]
 pub use query::*;
 
+#[cfg(feature = "query")]
+mod batch;
+#[cfg(feature = "query")]
+pub use batch::InMemoryStateQuery;
+
 mod traits;
 pub use traits::*;
