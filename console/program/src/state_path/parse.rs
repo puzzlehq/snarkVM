@@ -72,6 +72,53 @@ impl<N: Network> Display for StatePath<N> {
     }
 }
 
+impl<N: Network> FromStr for StateProofsResponse<N> {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let content = s
+            .strip_prefix("StateProofsResponse {")
+            .and_then(|s| s.strip_suffix('}'))
+            .ok_or("Invalid format for StateProofsResponse")?
+            .trim();
+
+        let mut parts = content.splitn(3, ',').map(str::trim);
+
+        let block_height_str = parts.next().ok_or("Missing block_height")?;
+        let global_state_root_str = parts.next().ok_or("Missing global_state_root")?;
+        let state_paths_str = parts.next().ok_or("Missing state_paths")?;
+
+        let block_height = block_height_str
+            .strip_prefix("block_height: ")
+            .ok_or("Expected 'block_height: '")?
+            .parse::<u32>()
+            .map_err(|e| format!("Failed to parse block_height: {:?}", e))?;
+
+        let global_state_root = global_state_root_str
+            .strip_prefix("global_state_root: ")
+            .ok_or("Expected 'global_state_root: '")?
+            .parse::<N::StateRoot>()
+            .map_err(|_| "Failed to parse global_state_root".to_string())?;
+
+        let state_paths_list = state_paths_str
+            .strip_prefix("state_paths: [")
+            .and_then(|s| s.strip_suffix(']'))
+            .ok_or("Expected 'state_paths: [...]'")?
+            .trim();
+
+        let state_paths = if state_paths_list.is_empty() {
+            vec![]
+        } else {
+            state_paths_list
+                .split(',')
+                .map(|s| s.trim().parse::<StatePath<N>>().map_err(|e| format!("StatePath parse error: {:?}", e)))
+                .collect::<Result<Vec<_>, _>>()?
+        };
+
+        Ok(Self { block_height, global_state_root, state_paths })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

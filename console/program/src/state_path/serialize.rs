@@ -48,14 +48,6 @@ impl<N: Network> Display for StateProofsResponse<N> {
     }
 }
 
-impl<N: Network> FromStr for StateProofsResponse<N> {
-    type Err = String;
-
-    fn from_str(_s: &str) -> Result<Self, Self::Err> {
-        Err("FromStr not implemented for StateProofsResponse".to_string())
-    }
-}
-
 impl<N: Network> ToBytes for StateProofsResponse<N> {
     fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
         self.block_height.write_le(&mut writer)?;
