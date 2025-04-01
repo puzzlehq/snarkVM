@@ -39,6 +39,15 @@ macro_rules! prepare_impl {
         for (transition_index, transition) in $transitions.iter().enumerate() {
             // Construct the transaction leaf.
             let transaction_leaf = TransactionLeaf::new_execution(transition_index as u16, **transition.id());
+            println!("Transition {} - ID: {}", transition_index, transition.id());
+            if let Some(tasks) = $self.input_tasks.get(transition.id()) {
+                for task in tasks {
+                    println!(
+                        "Preparing inclusion for commitment: {}\n  gamma: {}\n  serial: {}",
+                        task.commitment, task.gamma, task.serial_number
+                    );
+                }
+            }
 
             // Process the input tasks.
             match $self.input_tasks.get(transition.id()) {
@@ -66,6 +75,7 @@ macro_rules! prepare_impl {
                                 )?
                             }
                             None => {
+                                println!("📡 Fetching state path for commitment {}", task.commitment);
                                 $query.$get_state_path_for_commitment(&task.commitment)
                                 $(.$await)?
                             }?
