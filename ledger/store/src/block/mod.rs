@@ -729,6 +729,65 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         ))
     }
 
+    fn get_state_path_for_commitment_at_block(
+        &self,
+        commitment: &Field<N>,
+        block: &Block<N>,
+        block_tree: &BlockTree<N>,
+    ) -> Result<StatePath<N>> {
+        // Validate commitment exists in transition store
+        if !self.transition_store().contains_commitment(commitment)? {
+            bail!("Commitment '{commitment}' does not exist");
+        }
+
+        let transition_id = self.transition_store().find_transition_id(commitment)?;
+        let transaction_id = self.transaction_store().find_transaction_id_from_transition_id(&transition_id)?
+            .ok_or_else(|| anyhow!("Transaction not found"))?;
+
+        let transition = self.transition_store().get_transition(&transition_id)?
+            .ok_or_else(|| anyhow!("Transition not found"))?;
+
+        let transactions = block.transactions();
+        let transaction = transactions.get(&transaction_id)
+            .ok_or_else(|| anyhow!("Transaction not found"))?;
+
+        // Do path computations like in the original function...
+        let global_state_root = *block_tree.root();
+        let block_path = block_tree.prove(block.height() as usize, &block.hash().to_bits_le())?;
+
+        let transition_root = transition.to_root()?;
+        let transition_leaf = transition.to_leaf(commitment, false)?;
+        let transition_path = transition.to_path(&transition_leaf)?;
+
+        let transactions_path = transactions.to_path(transaction_id)?;
+        let transaction_leaf = transaction.to_leaf(transition.id())?;
+        let transaction_path = transaction.to_path(&transaction_leaf)?;
+
+        let block_header = block.header();
+        let header_root = block_header.to_root()?;
+        let header_leaf = HeaderLeaf::<N>::new(1, block_header.transactions_root());
+        let header_path = block_header.to_path(&header_leaf)?;
+
+        Ok(StatePath::from(
+            global_state_root.into(),
+            block_path,
+            block.hash(),
+            block.previous_hash(),
+            header_root,
+            header_path,
+            header_leaf,
+            transactions_path,
+            transaction.id(),
+            transaction_path,
+            transaction_leaf,
+            transition_root,
+            *transition.tcm(),
+            transition_path,
+            transition_leaf,
+        ))
+    }
+
+
     /// Returns the previous block hash of the given `block height`.
     fn get_previous_block_hash(&self, height: u32) -> Result<Option<N::BlockHash>> {
         match height.is_zero() {
