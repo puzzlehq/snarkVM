@@ -17,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use console::{
     network::prelude::*,
-    prelude::{Error, Result, anyhow},
+    prelude::{Error, Result, anyhow, bail},
     program::StatePath,
     types::Field,
 };
@@ -33,10 +33,22 @@ pub struct InMemoryStateQuery<N: Network> {
 
 impl<N: Network> InMemoryStateQuery<N> {
     pub fn new(block_height: u32, state_root: N::StateRoot, paths: Vec<StatePath<N>>) -> Self {
-        let state_paths = paths.into_iter().map(|p| (*p.tcm(), p)).collect::<HashMap<_, _>>();
-        Self { block_height, state_root, state_paths: Arc::new(state_paths) }
+        let state_paths = paths
+            .iter()
+            .map(|p| {
+                let normalized = Field::<N>::from_str(&p.tcm().to_string()).unwrap();
+                (normalized, p.clone())
+            })
+            .collect::<HashMap<_, _>>();
+        println!("🔍 State paths: {:?}", state_paths);
+        Self {
+            block_height,
+            state_root,
+            state_paths: Arc::new(state_paths),
+        }
     }
 }
+
 
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl<N: Network> QueryTrait<N> for InMemoryStateQuery<N> {
@@ -49,10 +61,25 @@ impl<N: Network> QueryTrait<N> for InMemoryStateQuery<N> {
     }
 
     fn get_state_path_for_commitment(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
-        self.state_paths
-            .get(commitment)
-            .cloned()
-            .ok_or_else(|| anyhow!("Missing state path for commitment: {commitment}"))
+      println!("🔍 Looking up commitment: {}", commitment);
+println!("📦 Available keys (normalized tcm):");
+for key in self.state_paths.keys() {
+  println!("  🔑 {}", key);
+}
+
+let normalized = Field::<N>::from_str(&commitment.to_string()).unwrap();
+println!("🔎 Normalized lookup key: {}", normalized);
+
+match self.state_paths.get(&normalized) {
+  Some(path) => {
+    println!("✅ Match found for commitment {}", commitment);
+    Ok(path.clone())
+  }
+  None => {
+    println!("❌ No match for commitment {} (normalized: {})", commitment, normalized);
+    bail!("Commitment not found in fetched state paths")
+  }
+}
     }
 
     #[cfg(feature = "async")]

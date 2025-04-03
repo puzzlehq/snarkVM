@@ -17,33 +17,45 @@ use super::*;
 
 macro_rules! prepare_impl {
     ($self:ident, $transitions:ident, $query:ident, $current_state_root:ident, $get_state_path_for_commitment:ident $(, $await:ident)?) => {{
+        println!("🔄 Starting prepare_impl macro");
+        println!("  - Number of transitions: {}", $transitions.len());
+
         // Ensure the number of leaves is within the Merkle tree size.
         Transaction::<N>::check_execution_size($transitions.len())?;
 
         // Initialize an empty transaction tree.
+        println!("🌳 Initializing empty transaction tree");
         let mut transaction_tree = N::merkle_tree_bhp::<TRANSACTION_DEPTH>(&[])?;
         // Initialize a vector for the assignments.
         let mut assignments = vec![];
 
         // Retrieve the global state root.
+        println!("🔍 Retrieving global state root...");
         let global_state_root = {
             $query.$current_state_root()
             $(.$await)?
         }?;
+        println!("✨ Retrieved global state root: {}", global_state_root);
 
         // Ensure the global state root is not zero.
         if *global_state_root == Field::zero() {
+            println!("❌ Global state root is zero!");
             bail!("Inclusion expected the global state root in the execution to *not* be zero")
         }
 
         for (transition_index, transition) in $transitions.iter().enumerate() {
+            println!("\n🔄 Processing transition {} of {}", transition_index + 1, $transitions.len());
+            println!("  - Transition ID: {}", transition.id());
+
             // Construct the transaction leaf.
             let transaction_leaf = TransactionLeaf::new_execution(transition_index as u16, **transition.id());
-            println!("Transition {} - ID: {}", transition_index, transition.id());
+            println!("📝 Created transaction leaf for index {}", transition_index);
+
             if let Some(tasks) = $self.input_tasks.get(transition.id()) {
+                println!("📋 Found {} input tasks for transition", tasks.len());
                 for task in tasks {
                     println!(
-                        "Preparing inclusion for commitment: {}\n  gamma: {}\n  serial: {}",
+                        "  Task details:\n    - Commitment: {}\n    - Gamma: {}\n    - Serial: {}",
                         task.commitment, task.gamma, task.serial_number
                     );
                 }
@@ -52,13 +64,17 @@ macro_rules! prepare_impl {
             // Process the input tasks.
             match $self.input_tasks.get(transition.id()) {
                 Some(tasks) => {
-                    for task in tasks {
+                    for (task_index, task) in tasks.iter().enumerate() {
+                        println!("\n🔍 Processing task {} of {}", task_index + 1, tasks.len());
+
                         // Retrieve the local state root.
                         let local_state_root = (*transaction_tree.root()).into();
+                        println!("🌳 Local state root: {}", local_state_root);
 
                         // Construct the state path.
                         let state_path = match &task.local {
                             Some((transaction_leaf, transition_root, tcm, transition_path, transition_leaf)) => {
+                                println!("📝 Using local state path");
                                 // Compute the transaction path.
                                 let transaction_path =
                                     transaction_tree.prove(transaction_leaf.index() as usize, &transaction_leaf.to_bits_le())?;
@@ -83,6 +99,9 @@ macro_rules! prepare_impl {
 
                         // Ensure the global state root is the same across iterations.
                         if global_state_root != state_path.global_state_root() {
+                            println!("❌ Global state root mismatch!");
+                            println!("  Expected: {}", global_state_root);
+                            println!("  Found: {}", state_path.global_state_root());
                             bail!("Inclusion expected the global state root to be the same across iterations")
                         }
 
@@ -98,15 +117,22 @@ macro_rules! prepare_impl {
 
                         // Add the assignment to the assignments.
                         assignments.push(assignment);
+                        println!("✅ Added assignment to list");
                     }
                 }
-                None => bail!("Missing input tasks for transition {} in inclusion", transition.id()),
+                None => {
+                    println!("❌ Missing input tasks for transition {}", transition.id());
+                    bail!("Missing input tasks for transition {} in inclusion", transition.id())
+                }
             }
 
             // Insert the leaf into the transaction tree.
+            println!("🌳 Inserting leaf into transaction tree");
             transaction_tree.append(&[transaction_leaf.to_bits_le()])?;
         }
 
+        println!("\n✨ Prepare_impl completed successfully");
+        println!("  - Generated {} assignments", assignments.len());
         Ok((assignments, global_state_root))
     }};
 }
@@ -131,3 +157,4 @@ impl<N: Network> Inclusion<N> {
         prepare_impl!(self, transitions, query, current_state_root_async, get_state_path_for_commitment_async, await)
     }
 }
+

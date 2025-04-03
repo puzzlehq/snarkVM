@@ -25,7 +25,6 @@ impl<N: Network> Record<N, Plaintext<N>> {
 
         // Construct the input as `(program_id || record_name || record)`.
         let input = to_bits_le![program_id, record_name, self];
-        println!("📦 Constructed input bits: {:?}", input);
 
         // Compute the BHP hash of the program record.
         let commitment = N::hash_bhp1024(&input)?;

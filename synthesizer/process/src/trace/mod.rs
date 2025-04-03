@@ -124,13 +124,25 @@ impl<N: Network> Trace<N> {
 impl<N: Network> Trace<N> {
     /// Returns the inclusion assignments and global state root for the current transition(s).
     pub fn prepare(&mut self, query: impl QueryTrait<N>) -> Result<()> {
+        println!("🎯 Starting prepare for transitions");
+        println!("  - Number of transitions: {}", self.transitions.len());
+
         // Compute the inclusion assignments.
+        println!("🔍 Computing inclusion assignments...");
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
+        println!("✨ Generated {} inclusion assignments", inclusion_assignments.len());
+        println!("🌳 Global state root: {}", global_state_root);
+
         // Store the inclusion assignments and global state root.
+        println!("💾 Storing inclusion assignments...");
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
+
+        println!("💾 Storing global state root...");
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
+
+        println!("✅ Prepare completed successfully");
         Ok(())
     }
 
