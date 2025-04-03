@@ -43,6 +43,7 @@ mod verify_fee;
 #[cfg(test)]
 mod tests;
 
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::PrivateKey,
     network::prelude::*,
@@ -62,6 +63,7 @@ use synthesizer_program::{
     Program,
     RegistersLoad,
     RegistersStore,
+    StackKeys,
     StackProgram,
 };
 use synthesizer_snark::{ProvingKey, UniversalSRS, VerifyingKey};
@@ -338,7 +340,7 @@ pub mod test_helpers {
         let locator = format!("{:?}:{function_name:?}", program.id());
 
         // Return the execution object.
-        trace.prove_execution::<CurrentAleo, _>(&locator, rng).unwrap()
+        trace.prove_execution::<CurrentAleo, _>(&locator, VarunaVersion::V1, rng).unwrap()
     }
 
     pub fn sample_key() -> (Identifier<CurrentNetwork>, ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>) {
@@ -433,7 +435,7 @@ function compute:
                 // Prepare the trace.
                 trace.prepare(Query::from(block_store)).unwrap();
                 // Compute the execution.
-                trace.prove_execution::<CurrentAleo, _>("testing", rng).unwrap()
+                trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap()
             })
             .clone()
     }

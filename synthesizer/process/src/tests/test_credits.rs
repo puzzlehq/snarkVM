@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use crate::Process;
+use algorithms::snark::varuna::VarunaVersion;
 use circuit::network::AleoV0;
 use console::{
     account::{Address, PrivateKey},
@@ -336,7 +337,7 @@ fn execute_function<F: FinalizeStorage<CurrentNetwork>>(
     trace.prepare(Query::from(&block_store))?;
 
     // Prove the execution.
-    let execution = trace.prove_execution::<CurrentAleo, _>(function, rng)?;
+    let execution = trace.prove_execution::<CurrentAleo, _>(function, VarunaVersion::V1, rng)?;
 
     // Finalize the execution.
     let block_height = block_height.unwrap_or(1);

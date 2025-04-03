@@ -37,7 +37,7 @@ use rayon::prelude::*;
 #[derive(Clone, PartialEq, Eq)]
 pub struct BatchHeader<N: Network> {
     /// The batch ID, defined as the hash of the author, round number, timestamp, transmission IDs,
-    /// committee ID, previous batch certificate IDs, and last election certificate IDs.
+    /// committee ID, and previous batch certificate IDs.
     batch_id: Field<N>,
     /// The author of the batch.
     author: Address<N>,
@@ -56,13 +56,6 @@ pub struct BatchHeader<N: Network> {
 }
 
 impl<N: Network> BatchHeader<N> {
-    /// The maximum number of certificates in a batch.
-    #[cfg(not(any(test, feature = "test-helpers")))]
-    pub const MAX_CERTIFICATES: u16 = N::MAX_CERTIFICATES;
-    /// The maximum number of certificates in a batch.
-    /// This is deliberately set to a high value (100) for testing purposes only.
-    #[cfg(any(test, feature = "test-helpers"))]
-    pub const MAX_CERTIFICATES: u16 = 100;
     /// The maximum number of rounds to store before garbage collecting.
     pub const MAX_GC_ROUNDS: usize = 100;
     /// The maximum number of transmissions in a batch.
@@ -100,7 +93,7 @@ impl<N: Network> BatchHeader<N> {
         );
         // Ensure that the number of previous certificate IDs is within bounds.
         ensure!(
-            previous_certificate_ids.len() <= Self::MAX_CERTIFICATES as usize,
+            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES()? as usize,
             "Invalid number of previous certificate IDs ({})",
             previous_certificate_ids.len()
         );
@@ -158,7 +151,7 @@ impl<N: Network> BatchHeader<N> {
         );
         // Ensure that the number of previous certificate IDs is within bounds.
         ensure!(
-            previous_certificate_ids.len() <= Self::MAX_CERTIFICATES as usize,
+            previous_certificate_ids.len() <= N::LATEST_MAX_CERTIFICATES()? as usize,
             "Invalid number of previous certificate IDs ({})",
             previous_certificate_ids.len()
         );

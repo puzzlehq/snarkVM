@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::{Address, PrivateKey},
     prelude::*,
@@ -164,7 +165,7 @@ function compute:
 pub fn sample_rejected_deployment(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample a deploy transaction.
     let deployment = match crate::sample_deployment_transaction(is_fee_private, rng) {
-        Transaction::Deploy(_, _, deployment, _) => (*deployment).clone(),
+        Transaction::Deploy(_, _, _, deployment, _) => (*deployment).clone(),
         _ => unreachable!(),
     };
 
@@ -186,19 +187,19 @@ pub fn sample_execution(rng: &mut TestRng) -> Execution<CurrentNetwork> {
     // Retrieve a transaction.
     let transaction = block.transactions().iter().next().unwrap().deref().clone();
     // Retrieve the execution.
-    if let Transaction::Execute(_, execution, _) = transaction { execution } else { unreachable!() }
+    if let Transaction::Execute(_, _, execution, _) = transaction { *execution } else { unreachable!() }
 }
 
 /// Samples a rejected execution.
 pub fn sample_rejected_execution(is_fee_private: bool, rng: &mut TestRng) -> Rejected<CurrentNetwork> {
     // Sample an execute transaction.
     let execution = match crate::sample_execution_transaction_with_fee(is_fee_private, rng) {
-        Transaction::Execute(_, execution, _) => execution,
+        Transaction::Execute(_, _, execution, _) => execution,
         _ => unreachable!(),
     };
 
     // Return the rejected execution.
-    Rejected::new_execution(execution)
+    Rejected::new_execution(*execution)
 }
 
 /********************************************** Fee ***********************************************/
@@ -254,7 +255,7 @@ pub fn sample_fee_private(deployment_or_execution_id: Field<CurrentNetwork>, rng
     // Prepare the assignments.
     trace.prepare(Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
-    let fee = trace.prove_fee::<CurrentAleo, _>(rng).unwrap();
+    let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
     // Convert the fee.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
@@ -307,7 +308,7 @@ pub fn sample_fee_public(deployment_or_execution_id: Field<CurrentNetwork>, rng:
     // Prepare the assignments.
     trace.prepare(Query::from(block_store)).unwrap();
     // Compute the proof and construct the fee.
-    let fee = trace.prove_fee::<CurrentAleo, _>(rng).unwrap();
+    let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
     // Convert the fee.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
@@ -427,7 +428,7 @@ pub fn sample_large_execution_transaction(rng: &mut TestRng) -> Transaction<Curr
             // Prepare the assignments.
             trace.prepare(ledger_query::Query::from(block_store)).unwrap();
             // Compute the proof and construct the execution.
-            let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", rng).unwrap();
+            let execution = trace.prove_execution::<CurrentAleo, _>("testing.aleo", VarunaVersion::V1, rng).unwrap();
             // Reconstruct the execution from bytes.
             // This is a hack to get around Rust dependency resolution.
             Execution::from_bytes_le(&execution.to_bytes_le().unwrap()).unwrap()
@@ -523,7 +524,7 @@ fn sample_genesis_block_and_components_raw(
     // Prepare the assignments.
     trace.prepare(Query::from(block_store)).unwrap();
     // Compute the proof and construct the execution.
-    let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, rng).unwrap();
+    let execution = trace.prove_execution::<CurrentAleo, _>(locator.0, VarunaVersion::V1, rng).unwrap();
     // Convert the execution.
     // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
     let execution = Execution::from_str(&execution.to_string()).unwrap();

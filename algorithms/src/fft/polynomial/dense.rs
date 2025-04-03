@@ -78,7 +78,8 @@ impl<F: Field> DensePolynomial<F> {
         while let Some(true) = coeffs.last().map(|c| c.is_zero()) {
             coeffs.pop();
         }
-        // Check that either the coefficients vec are empty or that the last coeff is non-zero.
+        // Check that either the coefficients vec are empty or that the last coeff is
+        // non-zero.
         assert!(coeffs.last().map_or(true, |coeff| !coeff.is_zero()));
 
         Self { coeffs }
@@ -191,7 +192,7 @@ impl<F: Field> From<super::SparsePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
-impl<'a, 'b, F: Field> Add<&'a DensePolynomial<F>> for &'b DensePolynomial<F> {
+impl<'a, F: Field> Add<&'a DensePolynomial<F>> for &'_ DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     fn add(self, other: &'a DensePolynomial<F>) -> DensePolynomial<F> {
@@ -300,7 +301,7 @@ impl<F: Field> Neg for DensePolynomial<F> {
     }
 }
 
-impl<'a, 'b, F: Field> Sub<&'a DensePolynomial<F>> for &'b DensePolynomial<F> {
+impl<'a, F: Field> Sub<&'a DensePolynomial<F>> for &'_ DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     #[inline]
@@ -396,7 +397,7 @@ impl<'a, F: Field> Sub<&'a super::SparsePolynomial<F>> for DensePolynomial<F> {
     }
 }
 
-impl<'a, 'b, F: Field> Div<&'a DensePolynomial<F>> for &'b DensePolynomial<F> {
+impl<'a, F: Field> Div<&'a DensePolynomial<F>> for &'_ DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     /// This division can panic and ignores remainders
@@ -439,7 +440,7 @@ impl<F: Field> CheckedDiv for DensePolynomial<F> {
 }
 
 /// Performs O(nlogn) multiplication of polynomials if F is smooth.
-impl<'a, 'b, F: PrimeField> Mul<&'a DensePolynomial<F>> for &'b DensePolynomial<F> {
+impl<'a, F: PrimeField> Mul<&'a DensePolynomial<F>> for &'_ DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     #[inline]
@@ -468,7 +469,7 @@ impl<F: Field> Mul<F> for DensePolynomial<F> {
 }
 
 /// Multiplies `self` by `other: F`.
-impl<'a, F: Field> Mul<F> for &'a DensePolynomial<F> {
+impl<F: Field> Mul<F> for &'_ DensePolynomial<F> {
     type Output = DensePolynomial<F>;
 
     #[inline]

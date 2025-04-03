@@ -90,6 +90,8 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         }
 
         // Compute the Merkle root of the transaction.
+        // Debug-mode only, as the `Transaction` constructor recomputes the transaction ID at initialization.
+        #[cfg(debug_assertions)]
         match transaction.to_root() {
             // Ensure the transaction ID is correct.
             Ok(root) if *transaction.id() != root => bail!("Incorrect transaction ID ({})", transaction.id()),
@@ -132,9 +134,6 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
         lap!(timer, "Check for duplicate elements");
 
-        // First, verify the fee.
-        self.check_fee(transaction, rejected_id)?;
-
         // Construct the transaction checksum.
         let checksum = Data::<Transaction<N>>::Buffer(transaction.to_bytes_le()?.into()).to_checksum::<N>()?;
 
@@ -142,15 +141,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         let is_partially_verified =
             self.partially_verified_transactions.read().peek(&(transaction.id())) == Some(&checksum);
 
+        // Verify the fee.
+        self.check_fee(transaction, rejected_id, is_partially_verified)?;
+
         // Next, verify the deployment or execution.
         match transaction {
-            Transaction::Deploy(id, owner, deployment, _) => {
-                // Compute the deployment ID.
-                let Ok(deployment_id) = deployment.to_deployment_id() else {
-                    bail!("Failed to compute the Merkle root for a deployment transaction '{id}'")
-                };
+            Transaction::Deploy(id, deployment_id, owner, deployment, _) => {
                 // Verify the signature corresponds to the transaction ID.
-                ensure!(owner.verify(deployment_id), "Invalid owner signature for deployment transaction '{id}'");
+                ensure!(owner.verify(*deployment_id), "Invalid owner signature for deployment transaction '{id}'");
                 // Ensure the edition is correct.
                 if deployment.edition() != N::EDITION {
                     bail!("Invalid deployment transaction '{id}' - expected edition {}", N::EDITION)
@@ -172,13 +170,9 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     }
                 }
             }
-            Transaction::Execute(id, execution, _) => {
-                // Compute the execution ID.
-                let Ok(execution_id) = execution.to_execution_id() else {
-                    bail!("Failed to compute the Merkle root for an execution transaction '{id}'")
-                };
+            Transaction::Execute(id, execution_id, execution, _) => {
                 // Ensure the execution was not previously rejected (replay attack prevention).
-                if self.block_store().contains_rejected_deployment_or_execution_id(&execution_id)? {
+                if self.block_store().contains_rejected_deployment_or_execution_id(execution_id)? {
                     bail!("Transaction '{id}' contains a previously rejected execution")
                 }
                 // Verify the execution.
@@ -202,15 +196,16 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 
     /// Verifies the `fee` in the given transaction. On failure, returns an error.
     #[inline]
-    pub fn check_fee(&self, transaction: &Transaction<N>, rejected_id: Option<Field<N>>) -> Result<()> {
+    pub fn check_fee(
+        &self,
+        transaction: &Transaction<N>,
+        rejected_id: Option<Field<N>>,
+        is_partially_verified: bool,
+    ) -> Result<()> {
         match transaction {
-            Transaction::Deploy(id, _, deployment, fee) => {
+            Transaction::Deploy(id, deployment_id, _, deployment, fee) => {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (deployment)");
-                // Compute the deployment ID.
-                let Ok(deployment_id) = deployment.to_deployment_id() else {
-                    bail!("Failed to compute the Merkle root for deployment transaction '{id}'")
-                };
                 // Compute the minimum deployment cost.
                 let (cost, _) = deployment_cost(deployment)?;
                 // Ensure the fee is sufficient to cover the cost.
@@ -218,15 +213,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                     bail!("Transaction '{id}' has an insufficient base fee (deployment) - requires {cost} microcredits")
                 }
                 // Verify the fee.
-                self.check_fee_internal(fee, deployment_id)?;
+                self.check_fee_internal(fee, *deployment_id, is_partially_verified)?;
             }
-            Transaction::Execute(id, execution, fee) => {
+            Transaction::Execute(id, execution_id, execution, fee) => {
                 // Ensure the rejected ID is not present.
                 ensure!(rejected_id.is_none(), "Transaction '{id}' should not have a rejected ID (execution)");
-                // Compute the execution ID.
-                let Ok(execution_id) = execution.to_execution_id() else {
-                    bail!("Failed to compute the Merkle root for execution transaction '{id}'")
-                };
                 // If the transaction contains only 1 transition, and the transition is a split, then the fee can be skipped.
                 let is_fee_required = !(execution.len() == 1 && transaction.contains_split());
                 // Verify the fee.
@@ -238,9 +229,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                             .block_store()
                             .find_block_height_from_state_root(execution.global_state_root())?
                             .unwrap_or_default();
-                        let (cost, (_, _)) = match block_height < N::CONSENSUS_V2_HEIGHT {
-                            true => execution_cost_v1(&self.process().read(), execution)?,
-                            false => execution_cost_v2(&self.process().read(), execution)?,
+                        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+                        let (cost, (_, _)) = if consensus_version == ConsensusVersion::V1 {
+                            execution_cost_v1(&self.process().read(), execution)?
+                        } else {
+                            execution_cost_v2(&self.process().read(), execution)?
                         };
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < cost {
@@ -253,7 +246,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         ensure!(*fee.base_amount()? == 0, "Transaction '{id}' has a non-zero base fee (execution)");
                     }
                     // Verify the fee.
-                    self.check_fee_internal(fee, execution_id)?;
+                    self.check_fee_internal(fee, *execution_id, is_partially_verified)?;
                 } else {
                     // Ensure the fee can be safely skipped.
                     ensure!(!is_fee_required, "Transaction '{id}' is missing a fee (execution)");
@@ -265,7 +258,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             Transaction::Fee(id, fee) => {
                 // Verify the fee.
                 match rejected_id {
-                    Some(rejected_id) => self.check_fee_internal(fee, rejected_id)?,
+                    Some(rejected_id) => self.check_fee_internal(fee, rejected_id, is_partially_verified)?,
                     None => bail!("Transaction '{id}' is missing a rejected ID (fee)"),
                 }
             }
@@ -313,10 +306,18 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             bail!("Execution verification failed - restricted transition found");
         }
 
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
         // Verify the execution proof, if it has not been partially-verified before.
         let verification = match is_partially_verified {
             true => Ok(()),
-            false => self.process.read().verify_execution(execution),
+            false => self.process.read().verify_execution(varuna_version, execution),
         };
         lap!(timer, "Verify the execution");
 
@@ -339,15 +340,34 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
     /// Note: This is an internal check only. To ensure all components of the fee are checked,
     /// use `VM::check_fee` instead.
     #[inline]
-    fn check_fee_internal(&self, fee: &Fee<N>, deployment_or_execution_id: Field<N>) -> Result<()> {
+    fn check_fee_internal(
+        &self,
+        fee: &Fee<N>,
+        deployment_or_execution_id: Field<N>,
+        is_partially_verified: bool,
+    ) -> Result<()> {
         let timer = timer!("VM::check_fee");
 
         // Ensure the fee does not exceed the limit.
         let fee_amount = fee.amount()?;
         ensure!(*fee_amount <= N::MAX_FEE, "Fee verification failed: fee exceeds the maximum limit");
 
-        // Verify the fee.
-        let verification = self.process.read().verify_fee(fee, deployment_or_execution_id);
+        // Retrieve the block height.
+        let block_height = self.block_store().current_block_height();
+
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(block_height)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
+        // Verify the fee, if it has not been partially-verified before.
+        let verification = match is_partially_verified {
+            true => Ok(()),
+            false => self.process.read().verify_fee(varuna_version, fee, deployment_or_execution_id),
+        };
         lap!(timer, "Verify the fee");
 
         // TODO (howardwu): This check is technically insufficient. Consider moving this upstream
@@ -408,16 +428,22 @@ mod tests {
         let deployment_transaction = crate::vm::test_helpers::sample_deployment_transaction(rng);
         // Ensure the transaction verifies.
         vm.check_transaction(&deployment_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&deployment_transaction.id()).is_some());
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&execution_transaction.id()).is_some());
 
         // Fetch an execution transaction.
         let execution_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         // Ensure the transaction verifies.
         vm.check_transaction(&execution_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&execution_transaction.id()).is_some());
     }
 
     #[test]
@@ -433,11 +459,15 @@ mod tests {
 
         // Ensure the deployment is valid.
         vm.check_deployment_internal(&deployment, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&deployment.to_deployment_id().unwrap()).is_none());
 
         // Ensure that deserialization doesn't break the transaction verification.
         let serialized_deployment = deployment.to_string();
         let deployment_transaction: Deployment<CurrentNetwork> = serde_json::from_str(&serialized_deployment).unwrap();
         vm.check_deployment_internal(&deployment_transaction, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&deployment.to_deployment_id().unwrap()).is_none());
     }
 
     #[test]
@@ -453,17 +483,28 @@ mod tests {
 
         for transaction in transactions {
             match transaction {
-                Transaction::Execute(_, execution, _) => {
+                Transaction::Execute(_, _, execution, _) => {
                     // Ensure the proof exists.
                     assert!(execution.proof().is_some());
                     // Verify the execution.
                     vm.check_execution_internal(&execution, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(
+                        vm.partially_verified_transactions.read().peek(&execution.to_execution_id().unwrap()).is_none()
+                    );
 
                     // Ensure that deserialization doesn't break the transaction verification.
                     let serialized_execution = execution.to_string();
                     let recovered_execution: Execution<CurrentNetwork> =
                         serde_json::from_str(&serialized_execution).unwrap();
                     vm.check_execution_internal(&recovered_execution, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(
+                        vm.partially_verified_transactions
+                            .read()
+                            .peek(&recovered_execution.to_execution_id().unwrap())
+                            .is_none()
+                    );
                 }
                 _ => panic!("Expected an execution transaction"),
             }
@@ -483,18 +524,22 @@ mod tests {
 
         for transaction in transactions {
             match transaction {
-                Transaction::Execute(_, execution, Some(fee)) => {
+                Transaction::Execute(_, _, execution, Some(fee)) => {
                     let execution_id = execution.to_execution_id().unwrap();
 
                     // Ensure the proof exists.
                     assert!(fee.proof().is_some());
                     // Verify the fee.
-                    vm.check_fee_internal(&fee, execution_id).unwrap();
+                    vm.check_fee_internal(&fee, execution_id, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(vm.partially_verified_transactions.read().peek(&execution_id).is_none());
 
                     // Ensure that deserialization doesn't break the transaction verification.
                     let serialized_fee = fee.to_string();
                     let recovered_fee: Fee<CurrentNetwork> = serde_json::from_str(&serialized_fee).unwrap();
-                    vm.check_fee_internal(&recovered_fee, execution_id).unwrap();
+                    vm.check_fee_internal(&recovered_fee, execution_id, false).unwrap();
+                    // Ensure the partially_verified_transactions cache is not updated.
+                    assert!(vm.partially_verified_transactions.read().peek(&execution_id).is_none());
                 }
                 _ => panic!("Expected an execution with a fee"),
             }
@@ -515,14 +560,20 @@ mod tests {
         // Fetch a valid execution transaction with a private fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_private_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
 
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
 
-        // Fetch an valid execution transaction with no fee.
+        // Fetch a valid execution transaction with no fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_without_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
     }
 
     #[test]
@@ -630,6 +681,8 @@ mod tests {
 
         // Verify.
         vm.check_transaction(&transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&transaction.id()).is_some());
     }
 
     #[test]
@@ -679,6 +732,8 @@ function compute:
         // Fetch a valid execution transaction with a public fee.
         let valid_transaction = crate::vm::test_helpers::sample_execution_transaction_with_public_fee(rng);
         vm.check_transaction(&valid_transaction, None, rng).unwrap();
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
 
         // Mutate the execution transaction by inserting a Field::Zero as an output.
         let execution = valid_transaction.execution().unwrap();
@@ -730,14 +785,13 @@ function compute:
 
         // Ensure that the mutated transaction fails verification due to an extra output.
         assert!(vm.check_transaction(&mutated_transaction, None, rng).is_err());
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&mutated_transaction.id()).is_none());
     }
 
     #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration() {
-        // This test will fail if the consensus v2 height is 0
-        assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
-
         let minimum_credits_transfer_public_fee = 34_060;
         let old_minimum_credits_transfer_public_fee = 51_060;
 
@@ -760,6 +814,8 @@ function compute:
             minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&fee_too_low_transaction, None, rng).is_err());
+        // Ensure the partially_verified_transactions cache is not updated.
+        assert!(vm.partially_verified_transactions.read().peek(&fee_too_low_transaction.id()).is_none());
 
         // Try to submit a tx with the old fee before the migration block height
         let old_valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -768,11 +824,13 @@ function compute:
             old_minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&old_valid_transaction, None, rng).is_ok());
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&old_valid_transaction.id()).is_some());
 
         // Update the VM to the migration block height
         let private_key = test_helpers::sample_genesis_private_key(rng);
         let transactions: [Transaction<CurrentNetwork>; 0] = [];
-        for _ in 0..CurrentNetwork::CONSENSUS_V2_HEIGHT {
+        for _ in 0..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap() {
             // Call the function
             let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
             vm.add_next_block(&next_block).unwrap();
@@ -811,6 +869,8 @@ function compute:
             old_minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&fee_too_high_transaction, None, rng).is_ok());
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&fee_too_high_transaction.id()).is_some());
 
         // Try to submit a tx with the new fee after the migration block height
         let valid_transaction = crate::vm::test_helpers::create_new_transaction_with_different_fee(
@@ -819,5 +879,71 @@ function compute:
             minimum_credits_transfer_public_fee,
         );
         assert!(vm.check_transaction(&valid_transaction, None, rng).is_ok());
+        // Ensure the partially_verified_transactions cache is updated.
+        assert!(vm.partially_verified_transactions.read().peek(&valid_transaction.id()).is_some());
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_varuna_migration() {
+        let rng = &mut TestRng::default();
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Fetch the private key.
+        let private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Create a transaction with on the old version.
+        let address = Address::try_from(&private_key).unwrap();
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ]
+        .into_iter();
+        let transaction_v1 =
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+
+        // Advance the ledger past ConsensusV4
+        let transactions: [Transaction<CurrentNetwork>; 0] = [];
+        for _ in 0..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V4).unwrap() {
+            // Check that the v1 transaction is valid.
+            assert!(vm.check_transaction(&transaction_v1, None, rng).is_ok());
+            // Call the function
+            let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
+            vm.add_next_block(&next_block).unwrap();
+        }
+
+        // Check that the v1 transaction is invalid
+        assert!(vm.check_transaction(&transaction_v1, None, rng).is_err());
+
+        // Create a transaction with on the new version.
+        let address = Address::try_from(&private_key).unwrap();
+        let inputs = [
+            Value::<CurrentNetwork>::from_str(&address.to_string()).unwrap(),
+            Value::<CurrentNetwork>::from_str("1u64").unwrap(),
+        ]
+        .into_iter();
+        let transaction_v2 =
+            vm.execute(&private_key, ("credits.aleo", "transfer_public"), inputs, None, 0, None, rng).unwrap();
+
+        // Check that the v2 transaction is valid
+        assert!(vm.check_transaction(&transaction_v2, None, rng).is_ok());
+
+        // Sample a new VM
+        let new_vm = crate::vm::test_helpers::sample_vm();
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+        // Update the VM.
+        new_vm.add_next_block(&genesis).unwrap();
+
+        // Check that v1 transaction is valid.
+        assert!(new_vm.check_transaction(&transaction_v1, None, rng).is_ok());
+        // Check that v2 transaction is invalid.
+        assert!(new_vm.check_transaction(&transaction_v2, None, rng).is_err());
     }
 }

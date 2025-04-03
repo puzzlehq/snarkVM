@@ -44,7 +44,7 @@ pub enum Polynomial<'a, F: Field> {
     Dense(Cow<'a, DensePolynomial<F>>),
 }
 
-impl<'a, F: Field> CanonicalSerialize for Polynomial<'a, F> {
+impl<F: Field> CanonicalSerialize for Polynomial<'_, F> {
     fn serialize_with_mode<W: Write>(&self, writer: W, compress: Compress) -> Result<(), SerializationError> {
         match self {
             Sparse(p) => {
@@ -66,7 +66,7 @@ impl<'a, F: Field> CanonicalSerialize for Polynomial<'a, F> {
     }
 }
 
-impl<'a, F: Field> Valid for Polynomial<'a, F> {
+impl<F: Field> Valid for Polynomial<'_, F> {
     fn check(&self) -> Result<(), SerializationError> {
         // Check that the polynomial contains a trailing zero coefficient.
         let has_trailing_zero = match self {
@@ -81,7 +81,7 @@ impl<'a, F: Field> Valid for Polynomial<'a, F> {
     }
 }
 
-impl<'a, F: Field> CanonicalDeserialize for Polynomial<'a, F> {
+impl<F: Field> CanonicalDeserialize for Polynomial<'_, F> {
     fn deserialize_with_mode<R: Read>(
         reader: R,
         compress: Compress,
@@ -218,7 +218,8 @@ impl<'a, F: Field> Polynomial<'a, F> {
         }
     }
 
-    /// Divide self by another (sparse or dense) polynomial, and returns the quotient and remainder.
+    /// Divide self by another (sparse or dense) polynomial, and returns the
+    /// quotient and remainder.
     pub fn divide_with_q_and_r(&self, divisor: &Self) -> Result<(DensePolynomial<F>, DensePolynomial<F>)> {
         ensure!(!divisor.is_zero(), "Dividing by zero polynomial is undefined");
 
@@ -257,7 +258,8 @@ impl<'a, F: Field> Polynomial<'a, F> {
 }
 
 impl<F: PrimeField> Polynomial<'_, F> {
-    /// Construct `Evaluations` by evaluating a polynomial over the domain `domain`.
+    /// Construct `Evaluations` by evaluating a polynomial over the domain
+    /// `domain`.
     pub fn evaluate_over_domain(poly: impl Into<Self>, domain: EvaluationDomain<F>) -> Evaluations<F> {
         let poly = poly.into();
         poly.eval_over_domain_helper(domain)

@@ -201,6 +201,7 @@ impl<N: Network> Deref for Fee<N> {
 #[cfg(test)]
 pub mod test_helpers {
     use super::*;
+    use algorithms::snark::varuna::VarunaVersion;
     use console::types::Field;
     use ledger_query::Query;
     use ledger_store::{BlockStore, helpers::memory::BlockMemory};
@@ -265,7 +266,7 @@ pub mod test_helpers {
         // Prepare the assignments.
         trace.prepare(Query::from(block_store)).unwrap();
         // Compute the proof and construct the fee.
-        let fee = trace.prove_fee::<CurrentAleo, _>(rng).unwrap();
+        let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
         // Convert the fee.
         // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.
@@ -321,7 +322,7 @@ pub mod test_helpers {
         // Prepare the assignments.
         trace.prepare(Query::from(block_store)).unwrap();
         // Compute the proof and construct the fee.
-        let fee = trace.prove_fee::<CurrentAleo, _>(rng).unwrap();
+        let fee = trace.prove_fee::<CurrentAleo, _>(VarunaVersion::V1, rng).unwrap();
 
         // Convert the fee.
         // Note: This is a testing-only hack to adhere to Rust's dependency cycle rules.

@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use snarkvm_algorithms::crypto_hash::sha256::sha256;
+use snarkvm_algorithms::{crypto_hash::sha256::sha256, snark::varuna::VarunaVersion};
 use snarkvm_circuit::{Aleo, Assignment};
 use snarkvm_console::{
     account::PrivateKey,
@@ -116,13 +116,25 @@ pub fn inclusion<N: Network, A: Aleo<Network = N>>() -> Result<()> {
     let inclusion_function_name = N::INCLUSION_FUNCTION_NAME;
     let (proving_key, verifying_key) = universal_srs.to_circuit_key(inclusion_function_name, &assignment)?;
 
-    // Ensure the proving key and verifying keys are valid.
-    let proof = proving_key.prove(inclusion_function_name, &assignment, &mut thread_rng())?;
-    assert!(verifying_key.verify(
-        inclusion_function_name,
-        &[N::Field::one(), **state_path.global_state_root(), *Field::<N>::zero(), *serial_number],
-        &proof
-    ));
+    for varuna_version in [VarunaVersion::V1, VarunaVersion::V2] {
+        // Ensure the proving key and verifying keys are valid.
+        let proof = proving_key.prove(inclusion_function_name, varuna_version, &assignment, &mut thread_rng())?;
+        assert!(verifying_key.verify(
+            inclusion_function_name,
+            varuna_version,
+            &[N::Field::one(), **state_path.global_state_root(), *Field::<N>::zero(), *serial_number],
+            &proof
+        ));
+        // Ensure using the wrong varuna version is not valid.
+        let wrong_varuna_version =
+            if varuna_version == VarunaVersion::V1 { VarunaVersion::V2 } else { VarunaVersion::V1 };
+        assert!(!verifying_key.verify(
+            inclusion_function_name,
+            wrong_varuna_version,
+            &[N::Field::one(), **state_path.global_state_root(), *Field::<N>::zero(), *serial_number],
+            &proof
+        ));
+    }
 
     // Initialize a vector for the commands.
     let mut commands = vec![];

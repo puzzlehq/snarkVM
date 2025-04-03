@@ -47,10 +47,11 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             true => {
                 // Compute the minimum execution cost.
                 let query = query.clone().unwrap_or(Query::VM(self.block_store().clone()));
-                let block_height = query.current_block_height()?;
-                let (minimum_execution_cost, (_, _)) = match block_height < N::CONSENSUS_V2_HEIGHT {
-                    true => execution_cost_v1(&self.process().read(), &execution)?,
-                    false => execution_cost_v2(&self.process().read(), &execution)?,
+                let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+                let (minimum_execution_cost, (_, _)) = if consensus_version == ConsensusVersion::V1 {
+                    execution_cost_v1(&self.process().read(), &execution)?
+                } else {
+                    execution_cost_v2(&self.process().read(), &execution)?
                 };
                 // Compute the execution ID.
                 let execution_id = execution.to_execution_id()?;
@@ -136,6 +137,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
         lap!(timer, "Prepare the query");
 
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the authorization.
@@ -149,7 +158,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the execution.
-                let execution = trace.prove_execution::<$aleo, _>(&locator, rng)?;
+                let execution = trace.prove_execution::<$aleo, _>(&locator, varuna_version, rng)?;
                 lap!(timer, "Compute the proof");
 
                 // Return the execution.
@@ -181,6 +190,14 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
         };
         lap!(timer, "Prepare the query");
 
+        // Determine which Varuna version to use.
+        let consensus_version = N::CONSENSUS_VERSION(query.current_block_height()?)?;
+        let varuna_version = if (ConsensusVersion::V1..=ConsensusVersion::V3).contains(&consensus_version) {
+            VarunaVersion::V1
+        } else {
+            VarunaVersion::V2
+        };
+
         macro_rules! logic {
             ($process:expr, $network:path, $aleo:path) => {{
                 // Prepare the authorization.
@@ -194,7 +211,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 lap!(timer, "Prepare the assignments");
 
                 // Compute the proof and construct the fee.
-                let fee = trace.prove_fee::<$aleo, _>(rng)?;
+                let fee = trace.prove_fee::<$aleo, _>(varuna_version, rng)?;
                 lap!(timer, "Compute the proof");
 
                 // Return the fee.
@@ -284,8 +301,8 @@ mod tests {
         assert_eq!(2914, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(1463, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -325,8 +342,8 @@ mod tests {
         assert_eq!(2970, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(1519, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -367,9 +384,6 @@ mod tests {
     #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration_occurs_at_correct_block_height() {
-        // This test will fail if the consensus v2 height is 0
-        assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
-
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
@@ -393,7 +407,7 @@ mod tests {
         assert_eq!(51_060, *transaction.base_fee_amount().unwrap());
 
         let transactions: [Transaction<CurrentNetwork>; 0] = [];
-        for _ in 0..CurrentNetwork::CONSENSUS_V2_HEIGHT {
+        for _ in 0..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap() {
             // Call the function
             let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
             vm.add_next_block(&next_block).unwrap();
@@ -408,9 +422,6 @@ mod tests {
     #[cfg(feature = "test")]
     #[test]
     fn test_fee_migration_correctly_calculates_nested() {
-        // This test will fail if the consensus v2 height is 0
-        assert_ne!(0, CurrentNetwork::CONSENSUS_V2_HEIGHT);
-
         let rng = &mut TestRng::default();
 
         // Initialize a new caller.
@@ -459,7 +470,7 @@ finalize test:
         assert_eq!(62_776, *transaction.base_fee_amount().unwrap());
 
         let transactions: [Transaction<CurrentNetwork>; 0] = [];
-        for _ in 1..CurrentNetwork::CONSENSUS_V2_HEIGHT {
+        for _ in 1..CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V2).unwrap() {
             // Call the function
             let next_block = crate::vm::test_helpers::sample_next_block(&vm, &private_key, &transactions, rng).unwrap();
             vm.add_next_block(&next_block).unwrap();
@@ -531,8 +542,8 @@ finalize test:
         assert_eq!(2867, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(1416, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -570,8 +581,8 @@ finalize test:
         assert_eq!(3693, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(2242, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -604,8 +615,8 @@ finalize test:
         assert_eq!(2871, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(1420, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -638,8 +649,8 @@ finalize test:
         assert_eq!(2891, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(1440, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -673,8 +684,8 @@ finalize test:
         assert_eq!(3538, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(2087, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -711,8 +722,8 @@ finalize test:
         assert_eq!(2166, transaction_size_in_bytes, "Update me if serialization has changed");
 
         // Assert the size of the execution.
-        assert!(matches!(transaction, Transaction::Execute(_, _, _)));
-        if let Transaction::Execute(_, execution, _) = &transaction {
+        assert!(matches!(transaction, Transaction::Execute(_, _, _, _)));
+        if let Transaction::Execute(_, _, execution, _) = &transaction {
             let execution_size_in_bytes = execution.to_bytes_le().unwrap().len();
             assert_eq!(2131, execution_size_in_bytes, "Update me if serialization has changed");
         }
@@ -869,7 +880,7 @@ finalize test:
         vm.add_next_block(&next_block).unwrap();
 
         // Execute the parent program.
-        let Transaction::Execute(_, execution, _) = vm
+        let Transaction::Execute(_, _, execution, _) = vm
             .execute(&caller_private_key, ("parent.aleo", "test"), Vec::<Value<_>>::new().iter(), None, 0, None, rng)
             .unwrap()
         else {
@@ -998,7 +1009,7 @@ finalize test:
         }
 
         // Execute the program.
-        let Transaction::Execute(_, execution, _) = vm
+        let Transaction::Execute(_, _, execution, _) = vm
             .execute(
                 &caller_private_key,
                 (format!("test_{}.aleo", Transaction::<CurrentNetwork>::MAX_TRANSITIONS - 1), "test"),

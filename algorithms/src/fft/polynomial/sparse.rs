@@ -116,14 +116,16 @@ impl<F: PrimeField> SparsePolynomial<F> {
     pub fn evaluate_over_domain_by_ref(&self, domain: EvaluationDomain<F>) -> Evaluations<F> {
         let poly: Polynomial<'_, F> = self.into();
         Polynomial::<F>::evaluate_over_domain(poly, domain)
-        // unimplemented!("current implementation does not produce evals in correct order")
+        // unimplemented!("current implementation does not produce evals in
+        // correct order")
     }
 
     /// Evaluate `self` over `domain`.
     pub fn evaluate_over_domain(self, domain: EvaluationDomain<F>) -> Evaluations<F> {
         let poly: Polynomial<'_, F> = self.into();
         Polynomial::<F>::evaluate_over_domain(poly, domain)
-        // unimplemented!("current implementation does not produce evals in correct order")
+        // unimplemented!("current implementation does not produce evals in
+        // correct order")
     }
 }
 impl<F: PrimeField> core::ops::MulAssign<F> for SparsePolynomial<F> {
@@ -138,7 +140,7 @@ impl<F: PrimeField> core::ops::MulAssign<F> for SparsePolynomial<F> {
     }
 }
 
-impl<'a, F: PrimeField> core::ops::Mul<F> for &'a SparsePolynomial<F> {
+impl<F: PrimeField> core::ops::Mul<F> for &'_ SparsePolynomial<F> {
     type Output = SparsePolynomial<F>;
 
     fn mul(self, other: F) -> Self::Output {
