@@ -34,13 +34,16 @@ pub struct InMemoryStateQuery<N: Network> {
 impl<N: Network> InMemoryStateQuery<N> {
     pub fn new(block_height: u32, state_root: N::StateRoot, paths: Vec<StatePath<N>>) -> Self {
         let state_paths = paths
-            .iter()
-            .map(|p| {
-                let normalized = Field::<N>::from_str(&p.tcm().to_string()).unwrap();
-                (normalized, p.clone())
-            })
-            .collect::<HashMap<_, _>>();
-        println!("🔍 State paths: {:?}", state_paths);
+          .iter()
+          .map(|p| {
+            let record_commitment = p.transition_leaf().id();
+            (record_commitment, p.clone())
+          })
+          .collect::<HashMap<_, _>>();
+
+
+        println!("🔍 State paths (transition commitments): {:?}", state_paths);
+
         Self {
             block_height,
             state_root,
@@ -61,25 +64,25 @@ impl<N: Network> QueryTrait<N> for InMemoryStateQuery<N> {
     }
 
     fn get_state_path_for_commitment(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
-      println!("🔍 Looking up commitment: {}", commitment);
-println!("📦 Available keys (normalized tcm):");
-for key in self.state_paths.keys() {
-  println!("  🔑 {}", key);
-}
+        println!("🔍 Looking up commitment: {}", commitment);
+        println!("📦 Available keys (normalized tcm):");
+        for key in self.state_paths.keys() {
+            println!("  🔑 {}", key);
+        }
 
-let normalized = Field::<N>::from_str(&commitment.to_string()).unwrap();
-println!("🔎 Normalized lookup key: {}", normalized);
+        let normalized = Field::<N>::from_str(&commitment.to_string()).unwrap();
+        println!("🔎 Normalized lookup key: {}", normalized);
 
-match self.state_paths.get(&normalized) {
-  Some(path) => {
-    println!("✅ Match found for commitment {}", commitment);
-    Ok(path.clone())
-  }
-  None => {
-    println!("❌ No match for commitment {} (normalized: {})", commitment, normalized);
-    bail!("Commitment not found in fetched state paths")
-  }
-}
+        match self.state_paths.get(&normalized) {
+            Some(path) => {
+                println!("✅ Match found for commitment {}", commitment);
+                Ok(path.clone())
+            }
+            None => {
+                println!("❌ No match for commitment {} (normalized: {})", commitment, normalized);
+                bail!("Commitment not found in fetched state paths")
+            }
+        }
     }
 
     #[cfg(feature = "async")]

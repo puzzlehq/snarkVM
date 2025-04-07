@@ -710,7 +710,6 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         let header_leaf = HeaderLeaf::<N>::new(1, block_header.transactions_root());
         let header_path = block_header.to_path(&header_leaf)?;
 
-
         println!("📌 Commitment: {commitment}");
         println!("🔍 Transition ID: {transition_id}");
         println!("🔍 Transaction ID: {transaction_id}");

@@ -157,4 +157,3 @@ impl<N: Network> Inclusion<N> {
         prepare_impl!(self, transitions, query, current_state_root_async, get_state_path_for_commitment_async, await)
     }
 }
-
