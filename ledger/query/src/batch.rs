@@ -34,24 +34,18 @@ pub struct InMemoryStateQuery<N: Network> {
 impl<N: Network> InMemoryStateQuery<N> {
     pub fn new(block_height: u32, state_root: N::StateRoot, paths: Vec<StatePath<N>>) -> Self {
         let state_paths = paths
-          .iter()
-          .map(|p| {
-            let record_commitment = p.transition_leaf().id();
-            (record_commitment, p.clone())
-          })
-          .collect::<HashMap<_, _>>();
-
+            .iter()
+            .map(|p| {
+                let record_commitment = p.transition_leaf().id();
+                (record_commitment, p.clone())
+            })
+            .collect::<HashMap<_, _>>();
 
         println!("🔍 State paths (transition commitments): {:?}", state_paths);
 
-        Self {
-            block_height,
-            state_root,
-            state_paths: Arc::new(state_paths),
-        }
+        Self { block_height, state_root, state_paths: Arc::new(state_paths) }
     }
 }
-
 
 #[cfg_attr(feature = "async", async_trait::async_trait(?Send))]
 impl<N: Network> QueryTrait<N> for InMemoryStateQuery<N> {

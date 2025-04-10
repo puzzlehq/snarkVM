@@ -25,7 +25,10 @@ use indexmap::IndexMap;
 use locktick::parking_lot::RwLock;
 #[cfg(not(feature = "locktick"))]
 use parking_lot::RwLock;
-use std::{collections::VecDeque, sync::Arc};
+use std::{
+    collections::{HashMap, VecDeque},
+    sync::Arc,
+};
 
 #[derive(Clone)]
 pub struct Authorization<N: Network> {
@@ -65,10 +68,20 @@ impl<N: Network> TryFrom<(Vec<Request<N>>, Vec<Transition<N>>)> for Authorizatio
             requests.len(),
             transitions.len()
         );
-        // Ensure the requests and transitions are in order.
-        for (index, (request, transition)) in requests.iter().zip_eq(&transitions).enumerate() {
-            // Ensure the request and transition correspond to one another.
-            ensure_request_and_transition_matches(index, request, transition)?;
+        // Build a map of transition commitments to their request indices
+        let mut tcm_indices: HashMap<&Field<N>, usize> = HashMap::new();
+        for (i, request) in requests.iter().enumerate() {
+            tcm_indices.insert(request.tcm(), i);
+        }
+
+        // Ensure the requests and transitions match
+        for (index, transition) in transitions.iter().enumerate() {
+            let request_idx = tcm_indices
+                .get(&transition.tcm())
+                .copied()
+                .ok_or_else(|| anyhow!("Missing request for transition {}", transition.id()))?;
+
+            ensure_request_and_transition_matches(index, &requests[request_idx], transition)?;
         }
         // Return the new `Authorization` instance.
         Ok(Self {
