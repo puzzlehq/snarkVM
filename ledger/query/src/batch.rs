@@ -32,16 +32,15 @@ pub struct InMemoryStateQuery<N: Network> {
 }
 
 impl<N: Network> InMemoryStateQuery<N> {
-    pub fn new(block_height: u32, state_root: N::StateRoot, paths: Vec<StatePath<N>>) -> Self {
-        let state_paths = paths
-            .iter()
-            .map(|p| {
-                let record_commitment = p.transition_leaf().id();
-                (record_commitment, p.clone())
-            })
-            .collect::<HashMap<_, _>>();
+    pub fn new(
+        block_height: u32,
+        state_root: N::StateRoot,
+        commitments: Vec<Field<N>>,
+        paths: Vec<StatePath<N>>,
+    ) -> Self {
+        assert_eq!(commitments.len(), paths.len(), "commitments and state_paths must be the same length");
 
-        println!("🔍 State paths (transition commitments): {:?}", state_paths);
+        let state_paths = commitments.into_iter().zip(paths.into_iter()).collect::<HashMap<_, _>>();
 
         Self { block_height, state_root, state_paths: Arc::new(state_paths) }
     }
@@ -58,22 +57,11 @@ impl<N: Network> QueryTrait<N> for InMemoryStateQuery<N> {
     }
 
     fn get_state_path_for_commitment(&self, commitment: &Field<N>) -> Result<StatePath<N>> {
-        println!("🔍 Looking up commitment: {}", commitment);
-        println!("📦 Available keys (normalized tcm):");
-        for key in self.state_paths.keys() {
-            println!("  🔑 {}", key);
-        }
-
         let normalized = Field::<N>::from_str(&commitment.to_string()).unwrap();
-        println!("🔎 Normalized lookup key: {}", normalized);
 
         match self.state_paths.get(&normalized) {
-            Some(path) => {
-                println!("✅ Match found for commitment {}", commitment);
-                Ok(path.clone())
-            }
+            Some(path) => Ok(path.clone()),
             None => {
-                println!("❌ No match for commitment {} (normalized: {})", commitment, normalized);
                 bail!("Commitment not found in fetched state paths")
             }
         }

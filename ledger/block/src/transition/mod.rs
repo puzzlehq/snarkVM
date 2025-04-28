@@ -194,32 +194,19 @@ impl<N: Network> Transition<N> {
                     (OutputID::Record(commitment, checksum), Value::Record(record)) => {
                         // Retrieve the record name.
                         let record_name = match output_type {
-                            ValueType::Record(record_name) => {
-                                println!("📝 Found record name: {}", record_name);
-                                record_name
-                            }
+                            ValueType::Record(record_name) => record_name,
                             // Ensure the input type is a record.
                             _ => bail!("Expected a record type at output {index}"),
                         };
 
                         // Retrieve the output register.
                         let output_register = match output_register {
-                            Some(output_register) => {
-                                println!("📋 Found output register: {}", output_register);
-                                output_register
-                            }
+                            Some(output_register) => output_register,
                             None => bail!("Expected a register to be paired with a record output"),
                         };
 
-                        println!("🔑 Computing record commitment with:");
-                        println!("  - Program ID: {}", program_id);
-                        println!("  - Record name: {}", record_name);
-                        println!("  - Record: {}", record);
-
                         // Compute the record commitment.
                         let candidate_cm = record.to_commitment(&program_id, record_name)?;
-                        println!("✨ Generated commitment: {}", candidate_cm);
-                        println!("📊 Expected commitment: {}", commitment);
 
                         // Ensure the commitment matches.
                         ensure!(*commitment == candidate_cm, "The output record commitment is incorrect");
