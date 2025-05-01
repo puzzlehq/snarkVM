@@ -44,7 +44,6 @@ macro_rules! prepare_impl {
             match $self.input_tasks.get(transition.id()) {
                 Some(tasks) => {
                     for task in tasks {
-
                         // Retrieve the local state root.
                         let local_state_root = (*transaction_tree.root()).into();
 
@@ -91,8 +90,7 @@ macro_rules! prepare_impl {
                         assignments.push(assignment);
                     }
                 }
-                None => { bail!("Missing input tasks for transition {} in inclusion", transition.id())
-                }
+                None => bail!("Missing input tasks for transition {} in inclusion", transition.id()),
             }
 
             // Insert the leaf into the transaction tree.

@@ -14,7 +14,6 @@
 // limitations under the License.
 
 use crate::{InMemoryStateQuery, QueryTrait};
-
 use console::{
     network::prelude::*,
     program::{ProgramID, StatePath},
