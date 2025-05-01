@@ -126,14 +126,11 @@ impl<N: Network> Trace<N> {
     pub fn prepare(&mut self, query: impl QueryTrait<N>) -> Result<()> {
         // Compute the inclusion assignments.
         let (inclusion_assignments, global_state_root) = self.inclusion_tasks.prepare(&self.transitions, query)?;
-
         // Store the inclusion assignments and global state root.
         self.inclusion_assignments
             .set(inclusion_assignments)
             .map_err(|_| anyhow!("Failed to set inclusion assignments"))?;
-
         self.global_state_root.set(global_state_root).map_err(|_| anyhow!("Failed to set global state root"))?;
-
         Ok(())
     }
 

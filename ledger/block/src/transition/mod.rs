@@ -207,7 +207,6 @@ impl<N: Network> Transition<N> {
 
                         // Compute the record commitment.
                         let candidate_cm = record.to_commitment(&program_id, record_name)?;
-
                         // Ensure the commitment matches.
                         ensure!(*commitment == candidate_cm, "The output record commitment is incorrect");
 

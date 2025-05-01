@@ -17,7 +17,6 @@ use super::*;
 
 macro_rules! prepare_impl {
     ($self:ident, $transitions:ident, $query:ident, $current_state_root:ident, $get_state_path_for_commitment:ident $(, $await:ident)?) => {{
-
         // Ensure the number of leaves is within the Merkle tree size.
         Transaction::<N>::check_execution_size($transitions.len())?;
 
@@ -38,14 +37,13 @@ macro_rules! prepare_impl {
         }
 
         for (transition_index, transition) in $transitions.iter().enumerate() {
-
             // Construct the transaction leaf.
             let transaction_leaf = TransactionLeaf::new_execution(transition_index as u16, **transition.id());
 
             // Process the input tasks.
             match $self.input_tasks.get(transition.id()) {
                 Some(tasks) => {
-                    for (task_index, task) in tasks.iter().enumerate() {
+                    for task in tasks {
 
                         // Retrieve the local state root.
                         let local_state_root = (*transaction_tree.root()).into();
@@ -93,8 +91,7 @@ macro_rules! prepare_impl {
                         assignments.push(assignment);
                     }
                 }
-                None => {
-                    bail!("Missing input tasks for transition {} in inclusion", transition.id())
+                None => { bail!("Missing input tasks for transition {} in inclusion", transition.id())
                 }
             }
 
