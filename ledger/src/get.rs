@@ -80,18 +80,18 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         block_height: u32,
         commitments: &[Field<N>],
     ) -> Result<StateProofsResponse<N>> {
-        // 1. Get current state root
+        // Get current state root
         let global_state_root = self
             .get_state_root(block_height)?
             .ok_or_else(|| anyhow!("Missing state root for block {}", block_height))?;
 
-        // 2. Generate proofs for each commitment
+        // Get state paths for each commitment
         let state_paths: Vec<StatePath<N>> = commitments
             .iter()
             .map(|commitment| self.vm().block_store().get_state_path_for_commitment(commitment))
             .collect::<Result<Vec<_>>>()?;
 
-        // 3. Return block height, global state root, and state paths
+        // Return block height, global state root, and state paths
         Ok(StateProofsResponse { block_height, global_state_root, state_paths })
     }
 
