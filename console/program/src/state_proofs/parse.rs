@@ -27,11 +27,13 @@ impl<N: Network> FromStr for StateProofs<N> {
 
 impl<N: Network> Display for StateProofs<N> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        // Use JSON for human-readable output
-        match serde_json::to_string_pretty(self) {
-            Ok(json) => write!(f, "{}", json),
-            Err(_) => write!(f, "Failed to serialize StateProofs"),
-        }
+        write!(
+            f,
+            "StateProofs {{ block_height: {}, global_state_root: {}, state_paths: [{}] }}",
+            self.block_height,
+            self.global_state_root,
+            self.state_paths.iter().map(|p| p.to_string()).collect::<Vec<_>>().join(", ")
+        )
     }
 }
 

@@ -18,9 +18,14 @@ use snarkvm_utilities::{FromBytes, ToBytes};
 
 impl<N: Network> Serialize for StateProofs<N> {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match serializer.is_human_readable() {
-            true => serializer.collect_str(self),
-            false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
+        if serializer.is_human_readable() {
+            let mut state = serializer.serialize_struct("StateProofs", 3)?;
+            state.serialize_field("block_height", &self.block_height)?;
+            state.serialize_field("global_state_root", &self.global_state_root)?;
+            state.serialize_field("state_paths", &self.state_paths)?;
+            state.end()
+        } else {
+            ToBytesSerializer::serialize_with_size_encoding(self, serializer)
         }
     }
 }
