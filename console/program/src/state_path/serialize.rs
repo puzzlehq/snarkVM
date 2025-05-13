@@ -16,64 +16,6 @@
 use super::*;
 use snarkvm_utilities::{FromBytes, ToBytes};
 
-impl<N: Network> Serialize for StateProofsResponse<N> {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        match serializer.is_human_readable() {
-            true => serializer.collect_str(self),
-            false => ToBytesSerializer::serialize_with_size_encoding(self, serializer),
-        }
-    }
-}
-
-impl<'de, N: Network> Deserialize<'de> for StateProofsResponse<N> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        match deserializer.is_human_readable() {
-            true => FromStr::from_str(&String::deserialize(deserializer)?).map_err(de::Error::custom),
-            false => {
-                FromBytesDeserializer::<Self>::deserialize_with_size_encoding(deserializer, "state proofs response")
-            }
-        }
-    }
-}
-
-impl<N: Network> Display for StateProofsResponse<N> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "StateProofsResponse {{ block_height: {}, global_state_root: {}, state_paths: [{}] }}",
-            self.block_height,
-            self.global_state_root,
-            self.state_paths.iter().map(|path| path.to_string()).collect::<Vec<_>>().join(", ")
-        )
-    }
-}
-
-impl<N: Network> ToBytes for StateProofsResponse<N> {
-    fn write_le<W: Write>(&self, mut writer: W) -> IoResult<()> {
-        self.block_height.write_le(&mut writer)?;
-        self.global_state_root.write_le(&mut writer)?;
-        self.state_paths.write_le(&mut writer)?;
-        Ok(())
-    }
-}
-
-impl<N: Network> FromBytes for StateProofsResponse<N> {
-    fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
-        let block_height = u32::read_le(&mut reader)?;
-        let global_state_root = N::StateRoot::read_le(&mut reader)?;
-
-        // Manually read the length of the Vec<StatePath<N>>
-        let num_paths = u64::read_le(&mut reader)? as usize;
-
-        let mut state_paths = Vec::with_capacity(num_paths);
-        for _ in 0..num_paths {
-            state_paths.push(StatePath::<N>::read_le(&mut reader)?);
-        }
-
-        Ok(Self { block_height, global_state_root, state_paths })
-    }
-}
-
 impl<N: Network> Serialize for StatePath<N> {
     /// Serializes the state path into string or bytes.
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {

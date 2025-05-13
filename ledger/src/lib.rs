@@ -58,7 +58,6 @@ use console::{
         ProgramID,
         Record,
         StatePath,
-        StateProofsResponse,
         Value,
     },
     types::{Field, Group},

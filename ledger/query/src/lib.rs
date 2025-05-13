@@ -29,5 +29,8 @@ mod batch;
 #[cfg(feature = "query")]
 pub use batch::InMemoryStateQuery;
 
+#[cfg(feature = "query")]
+pub use console::program::state_proofs::StateProofs;
+
 mod traits;
 pub use traits::*;

@@ -17,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use console::{
     network::prelude::*,
-    prelude::{Error, Result, anyhow, bail},
+    prelude::{Result, anyhow, bail},
     program::StatePath,
     types::Field,
 };

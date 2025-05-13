@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use crate::query::StateProofs;
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the committee for the given `block height`.
@@ -75,11 +76,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.block_store().get_state_path_for_commitment(commitment)
     }
 
-    pub fn get_state_proofs_for_block(
-        &self,
-        block_height: u32,
-        commitments: &[Field<N>],
-    ) -> Result<StateProofsResponse<N>> {
+    pub fn get_state_proofs_for_block(&self, block_height: u32, commitments: &[Field<N>]) -> Result<StateProofs<N>> {
         // Get current state root
         let global_state_root = self
             .get_state_root(block_height)?
@@ -92,7 +89,7 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
             .collect::<Result<Vec<_>>>()?;
 
         // Return block height, global state root, and state paths
-        Ok(StateProofsResponse { block_height, global_state_root, state_paths })
+        Ok(StateProofs::new(block_height, global_state_root, state_paths))
     }
 
     /// Returns the epoch hash for the given block height.

@@ -68,13 +68,6 @@ pub struct StatePath<N: Network> {
     transition_leaf: TransitionLeaf<N>,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct StateProofsResponse<N: Network> {
-    pub block_height: u32,
-    pub global_state_root: N::StateRoot,
-    pub state_paths: Vec<StatePath<N>>,
-}
-
 impl<N: Network> StatePath<N> {
     /// Initializes a new instance of `StatePath`.
     pub fn new_local(
