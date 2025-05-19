@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,23 @@ use super::*;
 impl<N: Network> FromBits for Plaintext<N> {
     /// Initializes a new plaintext from a list of little-endian bits *without* trailing zeros.
     fn from_bits_le(bits_le: &[bool]) -> Result<Self> {
+        Self::from_bits_le_internal(bits_le, 0)
+    }
+
+    /// Initializes a new plaintext from a list of big-endian bits *without* trailing zeros.
+    fn from_bits_be(bits_be: &[bool]) -> Result<Self> {
+        Self::from_bits_be_internal(bits_be, 0)
+    }
+}
+
+impl<N: Network> Plaintext<N> {
+    /// Initializes a new plaintext from a list of little-endian bits *without* trailing zeros, while the depth of the data.
+    fn from_bits_le_internal(bits_le: &[bool], depth: usize) -> Result<Self> {
+        // Ensure that the depth is within the maximum limit.
+        if depth > N::MAX_DATA_DEPTH {
+            bail!("Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH)
+        }
+
         let bits = bits_le;
 
         // The starting index used to create subsequent subslices of the `bits` slice.
@@ -63,7 +80,7 @@ impl<N: Network> FromBits for Plaintext<N> {
                 let identifier = Identifier::from_bits_le(next_bits(identifier_size as usize)?)?;
 
                 let member_size = u16::from_bits_le(next_bits(16)?)?;
-                let value = Plaintext::from_bits_le(next_bits(member_size as usize)?)?;
+                let value = Plaintext::from_bits_le_internal(next_bits(member_size as usize)?, depth + 1)?;
 
                 if members.insert(identifier, value).is_some() {
                     bail!("Duplicate identifier in struct.");
@@ -83,7 +100,7 @@ impl<N: Network> FromBits for Plaintext<N> {
             let mut elements = Vec::with_capacity(num_elements as usize);
             for _ in 0..num_elements {
                 let element_size = u16::from_bits_le(next_bits(16)?)?;
-                let element = Plaintext::from_bits_le(next_bits(element_size as usize)?)?;
+                let element = Plaintext::from_bits_le_internal(next_bits(element_size as usize)?, depth + 1)?;
 
                 elements.push(element);
             }
@@ -97,8 +114,13 @@ impl<N: Network> FromBits for Plaintext<N> {
         }
     }
 
-    /// Initializes a new plaintext from a list of big-endian bits *without* trailing zeros.
-    fn from_bits_be(bits_be: &[bool]) -> Result<Self> {
+    /// Initializes a new plaintext from a list of big-endian bits *without* trailing zeros, while tracking the depth of the data.
+    fn from_bits_be_internal(bits_be: &[bool], depth: usize) -> Result<Self> {
+        // Ensure that the depth is within the maximum limit.
+        if depth > N::MAX_DATA_DEPTH {
+            bail!("Plaintext depth exceeds maximum limit: {}", N::MAX_DATA_DEPTH)
+        }
+
         let bits = bits_be;
 
         // The starting index used to create subsequent subslices of the `bits` slice.
@@ -137,15 +159,12 @@ impl<N: Network> FromBits for Plaintext<N> {
             if num_members as usize > N::MAX_STRUCT_ENTRIES {
                 bail!("Struct exceeds maximum of entries.");
             }
-
             let mut members = IndexMap::with_capacity(num_members as usize);
             for _ in 0..num_members {
                 let identifier_size = u8::from_bits_be(next_bits(8)?)?;
                 let identifier = Identifier::from_bits_be(next_bits(identifier_size as usize)?)?;
-
                 let member_size = u16::from_bits_be(next_bits(16)?)?;
-                let value = Plaintext::from_bits_be(next_bits(member_size as usize)?)?;
-
+                let value = Plaintext::from_bits_be_internal(next_bits(member_size as usize)?, depth + 1)?;
                 if members.insert(identifier, value).is_some() {
                     bail!("Duplicate identifier in struct.");
                 }
@@ -164,7 +183,7 @@ impl<N: Network> FromBits for Plaintext<N> {
             let mut elements = Vec::with_capacity(num_elements as usize);
             for _ in 0..num_elements {
                 let element_size = u16::from_bits_be(next_bits(16)?)?;
-                let element = Plaintext::from_bits_be(next_bits(element_size as usize)?)?;
+                let element = Plaintext::from_bits_be_internal(next_bits(element_size as usize)?, depth + 1)?;
 
                 elements.push(element);
             }

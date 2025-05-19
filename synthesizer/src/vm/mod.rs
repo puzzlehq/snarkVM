@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -55,7 +55,6 @@ use ledger_store::{
     ConsensusStore,
     FinalizeMode,
     FinalizeStore,
-    TransactionStorage,
     TransactionStore,
     TransitionStore,
     atomic_finalize,
@@ -113,82 +112,52 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
             }
         }
 
-        // A helper function to retrieve all the deployments.
-        fn load_deployment_and_imports<N: Network, T: TransactionStorage<N>>(
-            process: &Process<N>,
-            transaction_store: &TransactionStore<N, T>,
-            transaction_id: N::TransactionID,
-            deployments: Arc<RwLock<IndexMap<ProgramID<N>, Deployment<N>>>>,
-        ) -> Result<()> {
-            // Retrieve the deployment from the transaction ID.
-            let deployment = match transaction_store.get_deployment(&transaction_id)? {
-                Some(deployment) => deployment,
-                None => bail!("Deployment transaction '{transaction_id}' is not found in storage."),
-            };
-
-            // Fetch the program from the deployment.
-            let program = deployment.program();
-            let program_id = program.id();
-
-            // Return early if the program is already loaded.
-            if process.contains_program(program_id) || deployments.read().contains_key(program_id) {
-                return Ok(());
-            }
-
-            // Iterate through the program imports.
-            for import_program_id in program.imports().keys() {
-                // Add the imports to the process if does not exist yet.
-                if !process.contains_program(import_program_id) && !deployments.read().contains_key(program_id) {
-                    // Fetch the deployment transaction ID.
-                    let Some(transaction_id) =
-                        transaction_store.deployment_store().find_transaction_id_from_program_id(import_program_id)?
-                    else {
-                        bail!("Transaction ID for '{program_id}' is not found in storage.");
-                    };
-
-                    // Add the deployment and its imports found recursively.
-                    load_deployment_and_imports(process, transaction_store, transaction_id, deployments.clone())?;
-                }
-            }
-
-            // Once all the imports have been included, add the parent deployment.
-            if !deployments.read().contains_key(program_id) {
-                // Note: There may be re-insertions due to parallelism, but it is safe to
-                //  reinsert into the IndexMap because it should be the same object.
-                deployments.write().entry(*program_id).or_insert(deployment);
-            }
-
-            Ok(())
-        }
-
         // Retrieve the transaction store.
         let transaction_store = store.transaction_store();
-        // Retrieve the list of deployment transaction IDs.
+        // Retrieve the block store.
+        let block_store = store.block_store();
+
+        // Retrieve the list of deployment transaction IDs and their associated block heights.
         let deployment_ids = transaction_store.deployment_transaction_ids().collect::<Vec<_>>();
-        // TODO (raychu86): Investigate loading them in order to limit recursion.
-        // Load the deployments from the store.
-        for (i, chunk) in deployment_ids.chunks(256).enumerate() {
+        let mut deployment_ids = cfg_into_iter!(deployment_ids)
+            .map(|transaction_id| {
+                // Retrieve the height.
+                let height =
+                    match block_store.find_block_hash(&transaction_id)?.map(|hash| block_store.get_block_height(&hash))
+                    {
+                        Some(Ok(Some(height))) => height,
+                        _ => {
+                            bail!("Block height for deployment transaction '{transaction_id}' is not found in storage.")
+                        }
+                    };
+                Ok((transaction_id, height))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        // Sort the deployment transaction IDs by their block heights.
+        deployment_ids.sort_unstable_by(|(_, a), (_, b)| a.cmp(b));
+
+        // Load the deployments in order of their block heights.
+        const PARALLELIZATION_FACTOR: usize = 256;
+        for (i, chunk) in deployment_ids.chunks(PARALLELIZATION_FACTOR).enumerate() {
             debug!(
                 "Loading deployments {}-{} (of {})...",
-                i * 256,
-                ((i + 1) * 256).min(deployment_ids.len()),
+                i * PARALLELIZATION_FACTOR,
+                ((i + 1) * PARALLELIZATION_FACTOR).min(deployment_ids.len()),
                 deployment_ids.len()
             );
-            // Prepare a tracker for the deployments.
-            let deployments = Arc::new(RwLock::new(IndexMap::new()));
-            cfg_iter!(chunk)
-                .map(|transaction_id| {
-                    // Load the deployment and its imports.
-                    load_deployment_and_imports(&process, transaction_store, **transaction_id, deployments.clone())
+            // Load the deployments.
+            let deployments = cfg_iter!(chunk)
+                .map(|(transaction_id, _)| {
+                    // Retrieve the deployment from the transaction ID.
+                    match transaction_store.get_deployment(transaction_id)? {
+                        Some(deployment) => Ok(deployment),
+                        None => bail!("Deployment transaction '{transaction_id}' is not found in storage."),
+                    }
                 })
-                .collect::<Result<()>>()?;
-
-            for (program_id, deployment) in deployments.read().iter() {
-                // Load the deployment if it does not exist in the process yet.
-                if !process.contains_program(program_id) {
-                    process.load_deployment(deployment)?;
-                }
-            }
+                .collect::<Result<Vec<_>>>()?;
+            // Add the deployments to the process.
+            // Note: This iterator must be serial, to ensure deployments are loaded in the order of their dependencies.
+            deployments.iter().try_for_each(|deployment| process.load_deployment(deployment))?;
         }
 
         // Return the new VM.
@@ -473,6 +442,7 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
 #[cfg(test)]
 pub(crate) mod test_helpers {
     use super::*;
+    use circuit::AleoV0;
     use console::{
         account::{Address, ViewKey},
         network::MainnetV0,
@@ -490,6 +460,8 @@ pub(crate) mod test_helpers {
     use synthesizer_snark::{Proof, VerifyingKey};
 
     pub(crate) type CurrentNetwork = MainnetV0;
+    type CurrentAleo = AleoV0;
+
     #[cfg(not(feature = "rocks"))]
     type LedgerType = ledger_store::helpers::memory::ConsensusMemory<CurrentNetwork>;
     #[cfg(feature = "rocks")]
@@ -503,6 +475,21 @@ pub(crate) mod test_helpers {
     pub(crate) fn sample_vm() -> VM<CurrentNetwork, LedgerType> {
         // Initialize a new VM.
         VM::from(ConsensusStore::open(StorageMode::new_test(None)).unwrap()).unwrap()
+    }
+
+    #[cfg(feature = "test")]
+    pub(crate) fn sample_vm_at_height(height: u32, rng: &mut TestRng) -> VM<CurrentNetwork, LedgerType> {
+        // Initialize the VM with a genesis block.
+        let vm = sample_vm_with_genesis_block(rng);
+        // Get the genesis private key.
+        let genesis_private_key = sample_genesis_private_key(rng);
+        // Advance the VM to the given height.
+        for _ in 0..height {
+            let block = sample_next_block(&vm, &genesis_private_key, &[], rng).unwrap();
+            vm.add_next_block(&block).unwrap();
+        }
+        // Return the VM.
+        vm
     }
 
     pub(crate) fn sample_genesis_private_key(rng: &mut TestRng) -> PrivateKey<CurrentNetwork> {
@@ -2939,6 +2926,142 @@ function add_thrice:
         vm.puzzle.prove(rng.gen(), rng.gen(), rng.gen(), None).unwrap();
     }
 
+    #[test]
+    fn test_multi_transition_authorization_deserialization() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a private key.
+        let private_key = sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = sample_vm();
+        // Update the VM.
+        vm.add_next_block(&genesis).unwrap();
+
+        // Deploy the base program.
+        let child_program_1 = Program::from_str(
+            r"
+program child_program_1.aleo;
+
+function check:
+    input r0 as field.private;
+    assert.eq r0 123456789123456789123456789123456789123456789123456789field;
+        ",
+        )
+        .unwrap();
+
+        let child_program_2 = Program::from_str(
+            r"
+program child_program_2.aleo;
+
+function check:
+    input r0 as field.private;
+    assert.eq r0 123456789123456789123456789123456789123456789123456789field;
+        ",
+        )
+        .unwrap();
+
+        // Deploy the child programs and add them to a block
+        let deployment_1 = vm.deploy(&private_key, &child_program_1, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment_1, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment_1], rng).unwrap()).unwrap();
+
+        let deployment_2 = vm.deploy(&private_key, &child_program_2, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment_2, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment_2], rng).unwrap()).unwrap();
+
+        // Check that child programs are deployed
+        assert!(vm.contains_program(&ProgramID::from_str("child_program_1.aleo").unwrap()));
+        assert!(vm.contains_program(&ProgramID::from_str("child_program_2.aleo").unwrap()));
+
+        // Deploy the program that calls the program from the previous layer.
+        let parent_program = Program::from_str(
+            r"
+import child_program_1.aleo;
+import child_program_2.aleo;
+
+program parent_program.aleo;
+
+function check:
+    input r0 as field.private;
+    call child_program_1.aleo/check r0;
+    call child_program_2.aleo/check r0;
+        ",
+        )
+        .unwrap();
+
+        let deployment = vm.deploy(&private_key, &parent_program, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
+
+        // Check that program is deployed.
+        assert!(vm.contains_program(&ProgramID::from_str("parent_program.aleo").unwrap()));
+
+        // Deploy the program that calls the program from the previous layer.
+        let grandparent_program = Program::from_str(
+            r"
+import parent_program.aleo;
+
+program grandparent_program.aleo;
+
+function check:
+    input r0 as field.private;
+    call parent_program.aleo/check r0;
+    call parent_program.aleo/check r0;
+    call parent_program.aleo/check r0;
+        ",
+        )
+        .unwrap();
+
+        let deployment = vm.deploy(&private_key, &grandparent_program, None, 0, None, rng).unwrap();
+        assert!(vm.check_transaction(&deployment, None, rng).is_ok());
+        vm.add_next_block(&sample_next_block(&vm, &private_key, &[deployment], rng).unwrap()).unwrap();
+
+        // Check that program is deployed.
+        assert!(vm.contains_program(&ProgramID::from_str("grandparent_program.aleo").unwrap()));
+
+        // Initialize the process.
+        let mut process = Process::<CurrentNetwork>::load().unwrap();
+
+        // Load the child and parent program
+        process.add_program(&child_program_1).unwrap();
+        process.add_program(&child_program_2).unwrap();
+        process.add_program(&parent_program).unwrap();
+        process.add_program(&grandparent_program).unwrap();
+
+        // Specify the function name on the parent program
+        let function_name = Identifier::<CurrentNetwork>::from_str("check").unwrap();
+
+        // Generate a random Field for input
+        let input = Value::<CurrentNetwork>::from_str(&Field::<CurrentNetwork>::rand(rng).to_string()).unwrap();
+
+        // Generate the authorization that will contain multiple transitions
+        let authorization = process
+            .authorize::<CurrentAleo, _>(
+                &private_key,
+                grandparent_program.id(),
+                &function_name,
+                vec![input].iter(),
+                rng,
+            )
+            .unwrap();
+
+        // Assert the Authorization has more than 1 transitions
+        assert!(authorization.transitions().len() > 1);
+
+        // Serialize the Authorization into a String
+        let authorization_serialized = authorization.to_string();
+
+        // Attempt to deserialize the Authorization from String
+        let deserialization_result = Authorization::<CurrentNetwork>::from_str(&authorization_serialized);
+
+        // Assert that the deserialization result is Ok
+        assert!(deserialization_result.is_ok());
+    }
+
     #[cfg(feature = "rocks")]
     #[test]
     fn test_atomic_unpause_on_error() {
@@ -2965,5 +3088,170 @@ function add_thrice:
 
         // It should still be possible to insert the 1st block afterwards.
         vm.add_next_block(&block1).unwrap();
+    }
+
+    #[test]
+    fn test_dependent_deployments_in_same_block() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the genesis block.
+        let genesis = crate::vm::test_helpers::sample_genesis_block(rng);
+
+        // Initialize the VM.
+        let vm = crate::vm::test_helpers::sample_vm();
+        vm.add_next_block(&genesis).unwrap();
+
+        // Fund two accounts to pay for the deployment.
+        let private_key_1 = PrivateKey::new(rng).unwrap();
+        let private_key_2 = PrivateKey::new(rng).unwrap();
+        let address_1 = Address::try_from(&private_key_1).unwrap();
+        let address_2 = Address::try_from(&private_key_2).unwrap();
+
+        let tx_1 = vm
+            .execute(
+                &caller_private_key,
+                ("credits.aleo", "transfer_public"),
+                [Value::from_str(&format!("{address_1}")).unwrap(), Value::from_str("100000000u64").unwrap()].iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+        let tx_2 = vm
+            .execute(
+                &caller_private_key,
+                ("credits.aleo", "transfer_public"),
+                [Value::from_str(&format!("{address_2}")).unwrap(), Value::from_str("100000000u64").unwrap()].iter(),
+                None,
+                0,
+                None,
+                rng,
+            )
+            .unwrap();
+
+        let block = sample_next_block(&vm, &caller_private_key, &[tx_1, tx_2], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 2);
+        vm.add_next_block(&block).unwrap();
+
+        // Deploy two programs that depend on each other.
+        let program_1 = Program::from_str(
+            r"
+program child_program.aleo;
+
+function adder:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    add r0 r1 into r2;
+    output r2 as u64.public;
+        ",
+        )
+        .unwrap();
+
+        let program_2 = Program::from_str(
+            r"
+import child_program.aleo;
+
+program parent_program.aleo;
+
+function adder:
+    input r0 as u64.public;
+    input r1 as u64.public;
+    call child_program.aleo/adder r0 r1 into r2;
+    output r2 as u64.public;
+        ",
+        )
+        .unwrap();
+
+        // Initialize an "off-chain" VM to generate the deployments.
+        let off_chain_vm = sample_vm();
+        off_chain_vm.add_next_block(&genesis).unwrap();
+        off_chain_vm.add_next_block(&block).unwrap();
+        // Deploy the first program.
+        let deployment_1 = off_chain_vm.deploy(&private_key_1, &program_1, None, 0, None, rng).unwrap();
+        // Check that the account has enough to pay for the deployment.
+        assert_eq!(*deployment_1.fee_amount().unwrap(), 2483025);
+        // Add the first program to the off-chain VM.
+        off_chain_vm.process().write().add_program(&program_1).unwrap();
+        // Deploy the second program.
+        let deployment_2 = off_chain_vm.deploy(&private_key_2, &program_2, None, 0, None, rng).unwrap();
+        // Check that the account has enough to pay for the deployment.
+        assert_eq!(*deployment_2.fee_amount().unwrap(), 2659575);
+        // Drop the off-chain VM.
+        drop(off_chain_vm);
+
+        let block = sample_next_block(&vm, &caller_private_key, &[deployment_1, deployment_2], rng).unwrap();
+        assert_eq!(block.transactions().num_accepted(), 1);
+        vm.add_next_block(&block).unwrap();
+
+        // Check that only `child_program.aleo` is in the VM.
+        assert!(vm.process().read().contains_program(&ProgramID::from_str("child_program.aleo").unwrap()));
+    }
+
+    #[cfg(feature = "test")]
+    #[test]
+    fn test_versioned_keyword_restrictions() {
+        let rng = &mut TestRng::default();
+
+        // Initialize a new caller.
+        let caller_private_key = crate::vm::test_helpers::sample_genesis_private_key(rng);
+
+        // Initialize the VM at a specific height.
+        // We subtract by 7 to deploy the 7 invalid programs.
+        let vm = sample_vm_at_height(CurrentNetwork::CONSENSUS_HEIGHT(ConsensusVersion::V6).unwrap() - 7, rng);
+
+        // Define the invalid program bodies.
+        let invalid_program_bodies = [
+            "function constructor:",
+            "function dummy:\nclosure constructor: input r0 as u8; assert.eq r0 0u8;",
+            "function dummy:\nmapping constructor: key as boolean.public; value as boolean.public;",
+            "function dummy:\nrecord constructor: owner as address.private;",
+            "function dummy:\nrecord foo: owner as address.public; constructor as address.public;",
+            "function dummy:\nstruct constructor: foo as address;",
+            "function dummy:\nstruct foo: constructor as address;",
+        ];
+
+        println!("Current height: {}", vm.block_store().current_block_height());
+
+        // Deploy a test program for each of the invalid program bodies.
+        // They should all be accepted by the VM, because the restriction is not yet in place.
+        for (i, body) in invalid_program_bodies.iter().enumerate() {
+            println!("Deploying 'valid' test program {}: {}", i, body);
+            let program = Program::from_str(&format!("program test_valid_{}.aleo;\n{}", i, body)).unwrap();
+            let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+            let block = sample_next_block(&vm, &caller_private_key, &[deployment], rng).unwrap();
+            assert_eq!(block.transactions().num_accepted(), 1);
+            assert_eq!(block.transactions().num_rejected(), 0);
+            assert_eq!(block.aborted_transaction_ids().len(), 0);
+            vm.add_next_block(&block).unwrap();
+        }
+
+        println!("Current height: {}", vm.block_store().current_block_height());
+
+        // Deploy a test program for each of the invalid program bodies.
+        // Verify that `check_transaction` fails for each of them.
+        for (i, body) in invalid_program_bodies.iter().enumerate() {
+            println!("Deploying 'invalid' test program {}: {}", i, body);
+            let program = Program::from_str(&format!("program test_invalid_{}.aleo;\n{}", i, body)).unwrap();
+            let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+            if let Err(e) = vm.check_transaction(&deployment, None, rng) {
+                println!("Error: {}", e);
+            } else {
+                panic!("Expected an error, but the deployment was accepted.")
+            }
+        }
+
+        // Attempt to deploy a program with the name `constructor`.
+        // Verify that `check_transaction` fails.
+        let program = Program::from_str(r"program constructor.aleo; function dummy:").unwrap();
+        let deployment = vm.deploy(&caller_private_key, &program, None, 0, None, rng).unwrap();
+        if let Err(e) = vm.check_transaction(&deployment, None, rng) {
+            println!("Error: {}", e);
+        } else {
+            panic!("Expected an error, but the deployment was accepted.")
+        }
     }
 }

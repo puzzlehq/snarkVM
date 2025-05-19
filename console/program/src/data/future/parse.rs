@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,27 +19,48 @@ impl<N: Network> Parser for Future<N> {
     /// Parses a string into a future value.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        /// Parses an array of future arguments: `[arg_0, ..., arg_1]`.
-        fn parse_arguments<N: Network>(string: &str) -> ParserResult<Vec<Argument<N>>> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the "[" from the string.
-            let (string, _) = tag("[")(string)?;
-            // Parse the whitespace from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the members.
-            let (string, arguments) = separated_list0(
-                pair(pair(Sanitizer::parse_whitespaces, tag(",")), Sanitizer::parse),
-                alt((map(Future::parse, Argument::Future), map(Plaintext::parse, Argument::Plaintext))),
-            )(string)?;
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the ']' from the string.
-            let (string, _) = tag("]")(string)?;
-            // Output the plaintext.
-            Ok((string, arguments))
-        }
+        // Parse the future from the string.
+        Self::parse_internal(string, 0)
+    }
+}
 
+impl<N: Network> Future<N> {
+    /// Parses an array of future arguments: `[arg_0, ..., arg_1]`, while tracking the depth of the data.
+    fn parse_arguments(string: &str, depth: usize) -> ParserResult<Vec<Argument<N>>> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the "[" from the string.
+        let (string, _) = tag("[")(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the members.
+        let (string, arguments) = separated_list0(
+            pair(pair(Sanitizer::parse_whitespaces, tag(",")), Sanitizer::parse),
+            alt((
+                map(|input| Self::parse_internal(input, depth + 1), Argument::Future),
+                map(Plaintext::parse, Argument::Plaintext),
+            )),
+        )(string)?;
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the ']' from the string.
+        let (string, _) = tag("]")(string)?;
+        // Output the plaintext.
+        Ok((string, arguments))
+    }
+
+    /// Parses a string into a future value, while tracking the depth of the data.
+    #[inline]
+    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
+        // Ensure that the depth is within the maximum limit.
+        // Note: `N::MAX_DATA_DEPTH` is an upper bound on the number of nested futures.
+        //  The true maximum is defined by `Transaction::<N>::MAX_TRANSITIONS`, however, that object is not accessible in this crate.
+        //  In practice, `MAX_DATA_DEPTH` is 32, while `MAX_TRANSITIONS` is 31.
+        if depth > N::MAX_DATA_DEPTH {
+            return map_res(take(0usize), |_| {
+                Err(error(format!("Found a future that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
+            })(string);
+        }
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;
         // Parse the "{" from the string.
@@ -90,7 +111,7 @@ impl<N: Network> Parser for Future<N> {
         // Parse the whitespace from the string.
         let (string, _) = Sanitizer::parse_whitespaces(string)?;
         // Parse the arguments from the string.
-        let (string, arguments) = parse_arguments(string)?;
+        let (string, arguments) = Self::parse_arguments(string, depth)?;
 
         // Parse the whitespace and comments from the string.
         let (string, _) = Sanitizer::parse(string)?;

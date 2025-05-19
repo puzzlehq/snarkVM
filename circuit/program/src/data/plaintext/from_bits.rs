@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,6 +20,26 @@ impl<A: Aleo> FromBits for Plaintext<A> {
 
     /// Initializes a new plaintext from a list of little-endian bits *without* trailing zeros.
     fn from_bits_le(bits_le: &[Boolean<A>]) -> Self {
+        Self::from_bits_le_internal(bits_le, 0)
+    }
+
+    /// Initializes a new plaintext from a list of big-endian bits *without* trailing zeros.
+    fn from_bits_be(bits_be: &[Boolean<A>]) -> Self {
+        Self::from_bits_be_internal(bits_be, 0)
+    }
+}
+
+impl<A: Aleo> Plaintext<A> {
+    /// Initializes a new plaintext from a list of little-endian bits *without* trailing zeros, while tracking the depth of the data.
+    fn from_bits_le_internal(bits_le: &[Boolean<A>], depth: usize) -> Self {
+        // Ensure that the depth is within the maximum limit.
+        if depth > <A::Network as console::Network>::MAX_DATA_DEPTH {
+            A::halt(format!(
+                "Plaintext depth exceeds maximum limit: {}",
+                <A::Network as console::Network>::MAX_DATA_DEPTH
+            ))
+        }
+
         let bits = bits_le;
 
         // The starting index used to create subsequent subslices of the `bits` slice.
@@ -64,7 +84,7 @@ impl<A: Aleo> FromBits for Plaintext<A> {
                 let identifier = Identifier::from_bits_le(next_bits(*identifier_size as usize));
 
                 let member_size = U16::from_bits_le(next_bits(16)).eject_value();
-                let value = Plaintext::from_bits_le(next_bits(*member_size as usize));
+                let value = Plaintext::from_bits_le_internal(next_bits(*member_size as usize), depth + 1);
 
                 members.insert(identifier, value);
             }
@@ -79,7 +99,7 @@ impl<A: Aleo> FromBits for Plaintext<A> {
             let mut elements = Vec::with_capacity(*num_elements as usize);
             for _ in 0..*num_elements {
                 let element_size = U16::from_bits_le(next_bits(16)).eject_value();
-                let value = Plaintext::from_bits_le(next_bits(*element_size as usize));
+                let value = Plaintext::from_bits_le_internal(next_bits(*element_size as usize), depth + 1);
 
                 elements.push(value);
             }
@@ -93,8 +113,16 @@ impl<A: Aleo> FromBits for Plaintext<A> {
         }
     }
 
-    /// Initializes a new plaintext from a list of big-endian bits *without* trailing zeros.
-    fn from_bits_be(bits_be: &[Boolean<A>]) -> Self {
+    /// Initializes a new plaintext from a list of big-endian bits *without* trailing zeros, while tracking the depth of the data.
+    fn from_bits_be_internal(bits_be: &[Boolean<A>], depth: usize) -> Self {
+        // Ensure that the depth is within the maximum limit.
+        if depth > <A::Network as console::Network>::MAX_DATA_DEPTH {
+            A::halt(format!(
+                "Plaintext depth exceeds maximum limit: {}",
+                <A::Network as console::Network>::MAX_DATA_DEPTH
+            ))
+        }
+
         let bits = bits_be;
 
         // The starting index used to create subsequent subslices of the `bits` slice.
@@ -139,7 +167,7 @@ impl<A: Aleo> FromBits for Plaintext<A> {
                 let identifier = Identifier::from_bits_be(next_bits(*identifier_size as usize));
 
                 let member_size = U16::from_bits_be(next_bits(16)).eject_value();
-                let value = Plaintext::from_bits_be(next_bits(*member_size as usize));
+                let value = Plaintext::from_bits_be_internal(next_bits(*member_size as usize), depth + 1);
 
                 members.insert(identifier, value);
             }
@@ -154,7 +182,7 @@ impl<A: Aleo> FromBits for Plaintext<A> {
             let mut elements = Vec::with_capacity(*num_elements as usize);
             for _ in 0..*num_elements {
                 let element_size = U16::from_bits_be(next_bits(16)).eject_value();
-                let value = Plaintext::from_bits_be(next_bits(*element_size as usize));
+                let value = Plaintext::from_bits_be_internal(next_bits(*element_size as usize), depth + 1);
 
                 elements.push(value);
             }

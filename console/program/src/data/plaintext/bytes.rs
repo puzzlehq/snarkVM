@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,20 @@ use super::*;
 impl<N: Network> FromBytes for Plaintext<N> {
     /// Reads the plaintext from a buffer.
     fn read_le<R: Read>(mut reader: R) -> IoResult<Self> {
+        Self::read_le_internal(&mut reader, 0)
+    }
+}
+
+impl<N: Network> Plaintext<N> {
+    /// Reads the plaintext from a buffer, while tracking the depth of the data.
+    fn read_le_internal<R: Read>(mut reader: R, depth: usize) -> IoResult<Self> {
+        // Ensure that the depth is within the maximum limit.
+        if depth > N::MAX_DATA_DEPTH {
+            return Err(error(format!(
+                "Failed to deserialize plaintext: Depth exceeds maximum limit: {}",
+                N::MAX_DATA_DEPTH
+            )));
+        }
         // Read the index.
         let index = u8::read_le(&mut reader)?;
         // Read the plaintext.
@@ -37,7 +51,7 @@ impl<N: Network> FromBytes for Plaintext<N> {
                     let mut bytes = Vec::new();
                     (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
                     // Recover the plaintext value.
-                    let plaintext = Plaintext::read_le(&mut bytes.as_slice())?;
+                    let plaintext = Self::read_le_internal(&mut bytes.as_slice(), depth + 1)?;
                     // Add the member.
                     members.insert(identifier, plaintext);
                 }
@@ -59,7 +73,7 @@ impl<N: Network> FromBytes for Plaintext<N> {
                     let mut bytes = Vec::new();
                     (&mut reader).take(num_bytes as u64).read_to_end(&mut bytes)?;
                     // Recover the plaintext value.
-                    let plaintext = Plaintext::read_le(&mut bytes.as_slice())?;
+                    let plaintext = Self::read_le_internal(&mut bytes.as_slice(), depth + 1)?;
                     // Add the element.
                     elements.push(plaintext);
                 }

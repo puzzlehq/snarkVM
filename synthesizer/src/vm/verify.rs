@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -161,6 +161,10 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                 if self.contains_program(deployment.program_id()) {
                     bail!("Program ID '{}' already exists", deployment.program_id());
                 }
+                // Enforce the syntax restrictions on the programs based on the current consensus version.
+                let current_block_height = self.block_store().current_block_height();
+                let consensus_version = N::CONSENSUS_VERSION(current_block_height)?;
+                deployment.program().check_restricted_keywords_for_consensus_version(consensus_version)?;
                 // Verify the deployment if it has not been verified before.
                 if !is_partially_verified {
                     // Verify the deployment.
@@ -235,6 +239,12 @@ impl<N: Network, C: ConsensusStorage<N>> VM<N, C> {
                         } else {
                             execution_cost_v2(&self.process().read(), execution)?
                         };
+                        // Ensure the cost does not exceed the transaction spend limit.
+                        ensure!(
+                            cost <= N::TRANSACTION_SPEND_LIMIT,
+                            "Transaction '{id}' exceeds the transaction spend limit '{}'",
+                            N::TRANSACTION_SPEND_LIMIT
+                        );
                         // Ensure the fee is sufficient to cover the cost.
                         if *fee.base_amount()? < cost {
                             bail!(

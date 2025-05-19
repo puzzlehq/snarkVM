@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,32 +19,39 @@ impl<N: Network> Parser for Plaintext<N> {
     /// Parses a string into a plaintext value.
     #[inline]
     fn parse(string: &str) -> ParserResult<Self> {
-        /// Parses a sanitized pair: `identifier: plaintext`.
-        fn parse_pair<N: Network>(string: &str) -> ParserResult<(Identifier<N>, Plaintext<N>)> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the identifier from the string.
-            let (string, identifier) = Identifier::parse(string)?;
-            // Parse the whitespace from the string.
-            let (string, _) = Sanitizer::parse_whitespaces(string)?;
-            // Parse the ":" from the string.
-            let (string, _) = tag(":")(string)?;
-            // Parse the plaintext from the string.
-            let (string, plaintext) = Plaintext::parse(string)?;
-            // Parse the whitespace from the string.
-            let (string, _) = Sanitizer::parse_whitespaces(string)?;
-            // Return the identifier and plaintext.
-            Ok((string, (identifier, plaintext)))
-        }
+        // Parse the string into a plaintext value.
+        Self::parse_internal(string, 0)
+    }
+}
 
-        /// Parses a plaintext as a struct: `{ identifier_0: plaintext_0, ..., identifier_n: plaintext_n }`.
-        fn parse_struct<N: Network>(string: &str) -> ParserResult<Plaintext<N>> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the "{" from the string.
-            let (string, _) = tag("{")(string)?;
-            // Parse the members.
-            let (string, members) = map_res(separated_list1(tag(","), parse_pair), |members: Vec<_>| {
+impl<N: Network> Plaintext<N> {
+    /// Parses a sanitized pair: `identifier: plaintext`.
+    fn parse_pair(string: &str, depth: usize) -> ParserResult<(Identifier<N>, Self)> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the identifier from the string.
+        let (string, identifier) = Identifier::parse(string)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Parse the ":" from the string.
+        let (string, _) = tag(":")(string)?;
+        // Parse the plaintext from the string.
+        let (string, plaintext) = Self::parse_internal(string, depth + 1)?;
+        // Parse the whitespace from the string.
+        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+        // Return the identifier and plaintext.
+        Ok((string, (identifier, plaintext)))
+    }
+
+    /// Parses a plaintext as a struct: `{ identifier_0: plaintext_0, ..., identifier_n: plaintext_n }`.
+    fn parse_struct(string: &str, depth: usize) -> ParserResult<Self> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the "{" from the string.
+        let (string, _) = tag("{")(string)?;
+        // Parse the members.
+        let (string, members) =
+            map_res(separated_list1(tag(","), |input| Self::parse_pair(input, depth)), |members: Vec<_>| {
                 // Ensure the members has no duplicate names.
                 if has_duplicates(members.iter().map(|(name, ..)| name)) {
                     return Err(error("Duplicate member in struct"));
@@ -55,40 +62,49 @@ impl<N: Network> Parser for Plaintext<N> {
                     false => Err(error(format!("Found a plaintext that exceeds size ({})", members.len()))),
                 }
             })(string)?;
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the '}' from the string.
-            let (string, _) = tag("}")(string)?;
-            // Output the plaintext.
-            Ok((string, Plaintext::Struct(IndexMap::from_iter(members), Default::default())))
-        }
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the '}' from the string.
+        let (string, _) = tag("}")(string)?;
+        // Output the plaintext.
+        Ok((string, Self::Struct(IndexMap::from_iter(members), Default::default())))
+    }
 
-        /// Parses a plaintext as an array: `[plaintext_0, ..., plaintext_n]`.
-        fn parse_array<N: Network>(string: &str) -> ParserResult<Plaintext<N>> {
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the "[" from the string.
-            let (string, _) = tag("[")(string)?;
-            // Parse the members.
-            let (string, members) = separated_list1(tag(","), Plaintext::parse)(string)?;
-            // Parse the whitespace and comments from the string.
-            let (string, _) = Sanitizer::parse(string)?;
-            // Parse the ']' from the string.
-            let (string, _) = tag("]")(string)?;
-            // Output the plaintext.
-            Ok((string, Plaintext::Array(members, Default::default())))
-        }
+    /// Parses a plaintext as an array: `[plaintext_0, ..., plaintext_n]`.
+    fn parse_array(string: &str, depth: usize) -> ParserResult<Self> {
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the "[" from the string.
+        let (string, _) = tag("[")(string)?;
+        // Parse the members.
+        let (string, members) = separated_list1(tag(","), |input| Self::parse_internal(input, depth + 1))(string)?;
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the ']' from the string.
+        let (string, _) = tag("]")(string)?;
+        // Output the plaintext.
+        Ok((string, Self::Array(members, Default::default())))
+    }
 
-        // Parse the whitespace from the string.
-        let (string, _) = Sanitizer::parse_whitespaces(string)?;
+    /// Parses a string into a plaintext value, while tracking the depth of the data.
+    fn parse_internal(string: &str, depth: usize) -> ParserResult<Self> {
+        // Ensure that the depth is within the maximum limit.
+        if depth > N::MAX_DATA_DEPTH {
+            return map_res(take(0usize), |_| {
+                Err(error(format!("Found a plaintext that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
+            })(string);
+        }
+        // Parse the whitespace and comments from the string.
+        let (string, _) = Sanitizer::parse(string)?;
+        // Parse the struct or array from the string.
         // Parse to determine the plaintext (order matters).
         alt((
             // Parse a plaintext literal.
             map(Literal::parse, |literal| Self::Literal(literal, Default::default())),
             // Parse a plaintext struct.
-            parse_struct,
+            |input| Self::parse_struct(input, depth),
             // Parse a plaintext array.
-            parse_array,
+            |input| Self::parse_array(input, depth),
         ))(string)
     }
 }

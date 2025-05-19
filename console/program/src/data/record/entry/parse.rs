@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -27,8 +27,8 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             Private,
         }
 
-        /// Parses a sanitized pair: `identifier: entry`.
-        fn parse_pair<N: Network>(string: &str) -> ParserResult<(Identifier<N>, Plaintext<N>, Mode)> {
+        /// Parses a sanitized pair: `identifier: entry`, while tracking the depth of the data.
+        fn parse_pair<N: Network>(string: &str, depth: usize) -> ParserResult<(Identifier<N>, Plaintext<N>, Mode)> {
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the identifier from the string.
@@ -42,11 +42,11 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             // Parse the plaintext and visibility from the string.
             let (string, (plaintext, mode)) = alt((
                 // Parse a literal.
-                parse_literal,
+                |input| parse_literal(input, depth),
                 // Parse a struct.
-                parse_struct,
+                |input| parse_struct(input, depth),
                 // Parse an array.
-                parse_array,
+                |input| parse_array(input, depth),
             ))(string)?;
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
@@ -54,8 +54,14 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             Ok((string, (identifier, plaintext, mode)))
         }
 
-        /// Parses an entry as a literal: `literal.visibility`.
-        fn parse_literal<N: Network>(string: &str) -> ParserResult<(Plaintext<N>, Mode)> {
+        /// Parses an entry as a literal: `literal.visibility`, while tracking the depth of the data.
+        fn parse_literal<N: Network>(string: &str, depth: usize) -> ParserResult<(Plaintext<N>, Mode)> {
+            // Ensure that the depth is within the maximum limit.
+            if depth > N::MAX_DATA_DEPTH {
+                return map_res(take(0usize), |_| {
+                    Err(error(format!("Found an entry future that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
+                })(string);
+            }
             alt((
                 map(pair(Literal::parse, tag(".constant")), |(literal, _)| (Plaintext::from(literal), Mode::Constant)),
                 map(pair(Literal::parse, tag(".public")), |(literal, _)| (Plaintext::from(literal), Mode::Public)),
@@ -63,9 +69,15 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             ))(string)
         }
 
-        /// Parses an entry as a struct: `{ identifier_0: plaintext_0.visibility, ..., identifier_n: plaintext_n.visibility }`.
+        /// Parses an entry as a struct: `{ identifier_0: plaintext_0.visibility, ..., identifier_n: plaintext_n.visibility }`, while tracking the depth of the data.
         /// Observe the `visibility` is the same for all members of the plaintext value.
-        fn parse_struct<N: Network>(string: &str) -> ParserResult<(Plaintext<N>, Mode)> {
+        fn parse_struct<N: Network>(string: &str, depth: usize) -> ParserResult<(Plaintext<N>, Mode)> {
+            // Ensure that the depth is within the maximum limit.
+            if depth > N::MAX_DATA_DEPTH {
+                return map_res(take(0usize), |_| {
+                    Err(error(format!("Found an entry that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
+                })(string);
+            }
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the "{" from the string.
@@ -73,24 +85,25 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             // Parse the whitespace from the string.
             let (string, _) = Sanitizer::parse_whitespaces(string)?;
             // Parse the members.
-            let (string, (members, mode)) = map_res(separated_list1(tag(","), parse_pair), |members: Vec<_>| {
-                // Ensure the members has no duplicate names.
-                if has_duplicates(members.iter().map(|(name, ..)| name)) {
-                    return Err(error("Duplicate member in struct"));
-                }
-                // Ensure the members all have the same visibility.
-                let mode = members.iter().map(|(_, _, mode)| mode).dedup().collect::<Vec<_>>();
-                let mode = match mode.len() == 1 {
-                    true => *mode[0],
-                    false => return Err(error("Members of struct in entry have different visibilities")),
-                };
-                // Ensure the number of structs is within the maximum limit.
-                match members.len() <= N::MAX_STRUCT_ENTRIES {
-                    // Return the members and the visibility.
-                    true => Ok((members.into_iter().map(|(i, p, _)| (i, p)).collect::<Vec<_>>(), mode)),
-                    false => Err(error(format!("Found a struct that exceeds size ({})", members.len()))),
-                }
-            })(string)?;
+            let (string, (members, mode)) =
+                map_res(separated_list1(tag(","), |input| parse_pair(input, depth + 1)), |members: Vec<_>| {
+                    // Ensure the members has no duplicate names.
+                    if has_duplicates(members.iter().map(|(name, ..)| name)) {
+                        return Err(error("Duplicate member in struct"));
+                    }
+                    // Ensure the members all have the same visibility.
+                    let mode = members.iter().map(|(_, _, mode)| mode).dedup().collect::<Vec<_>>();
+                    let mode = match mode.len() == 1 {
+                        true => *mode[0],
+                        false => return Err(error("Members of struct in entry have different visibilities")),
+                    };
+                    // Ensure the number of structs is within the maximum limit.
+                    match members.len() <= N::MAX_STRUCT_ENTRIES {
+                        // Return the members and the visibility.
+                        true => Ok((members.into_iter().map(|(i, p, _)| (i, p)).collect::<Vec<_>>(), mode)),
+                        false => Err(error(format!("Found a struct that exceeds size ({})", members.len()))),
+                    }
+                })(string)?;
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the '}' from the string.
@@ -99,9 +112,15 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             Ok((string, (Plaintext::Struct(IndexMap::from_iter(members), Default::default()), mode)))
         }
 
-        /// Parses an entry as an array: `[plaintext_0.visibility, ..., plaintext_n.visibility]`.
+        /// Parses an entry as an array: `[plaintext_0.visibility, ..., plaintext_n.visibility]`, while tracking the depth of the data.
         /// Observe the `visibility` is the same for all members of the plaintext value.
-        fn parse_array<N: Network>(string: &str) -> ParserResult<(Plaintext<N>, Mode)> {
+        fn parse_array<N: Network>(string: &str, depth: usize) -> ParserResult<(Plaintext<N>, Mode)> {
+            // Ensure that the depth is within the maximum limit.
+            if depth > N::MAX_DATA_DEPTH {
+                return map_res(take(0usize), |_| {
+                    Err(error(format!("Found an entry future that exceeds maximum data depth ({})", N::MAX_DATA_DEPTH)))
+                })(string);
+            }
             // Parse the whitespace and comments from the string.
             let (string, _) = Sanitizer::parse(string)?;
             // Parse the "[" from the string.
@@ -112,7 +131,11 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
             let (string, (elements, mode)) = map_res(
                 separated_list1(
                     pair(Sanitizer::parse_whitespaces, pair(tag(","), Sanitizer::parse_whitespaces)),
-                    alt((parse_literal, parse_struct, parse_array)),
+                    alt((
+                        |input| parse_literal(input, depth + 1),
+                        |input| parse_struct(input, depth + 1),
+                        |input| parse_array(input, depth + 1),
+                    )),
                 ),
                 |members: Vec<(Plaintext<N>, Mode)>| {
                     // Ensure the members all have the same visibility.
@@ -142,11 +165,11 @@ impl<N: Network> Parser for Entry<N, Plaintext<N>> {
         // Parse to determine the entry (order matters).
         let (string, (plaintext, mode)) = alt((
             // Parse a literal.
-            parse_literal,
+            |input| parse_literal(input, 0),
             // Parse a struct.
-            parse_struct,
+            |input| parse_struct(input, 0),
             // Parse an array.
-            parse_array,
+            |input| parse_array(input, 0),
         ))(string)?;
 
         // Return the entry.
