@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -28,9 +28,6 @@ impl<N: Network> Stack<N> {
             universal_srs: process.universal_srs().clone(),
             proving_keys: Default::default(),
             verifying_keys: Default::default(),
-            number_of_calls: Default::default(),
-            finalize_costs: Default::default(),
-            program_depth: 0,
             program_address: program.id().to_address()?,
         };
 
@@ -42,14 +39,6 @@ impl<N: Network> Stack<N> {
             if !process.contains_program(import) {
                 bail!("Cannot add program '{}' because its import '{import}' must be added first", program.id())
             }
-            // Retrieve the external stack for the import program ID.
-            let external_stack = process.get_stack(import)?;
-            // Update the program depth, checking that it does not exceed the maximum call depth.
-            stack.program_depth = std::cmp::max(stack.program_depth, external_stack.program_depth() + 1);
-            ensure!(
-                stack.program_depth <= N::MAX_PROGRAM_DEPTH,
-                "Program depth exceeds the maximum allowed call depth"
-            );
         }
         // Add the program closures to the stack.
         for closure in program.closures().values() {
@@ -62,29 +51,8 @@ impl<N: Network> Stack<N> {
             // Add the function to the stack.
             stack.insert_function(function)?;
             // Determine the number of calls for the function.
-            let mut num_calls = 1;
-            for instruction in function.instructions() {
-                if let Instruction::Call(call) = instruction {
-                    // Determine if this is a function call.
-                    if call.is_function_call(&stack)? {
-                        // Increment by the number of calls.
-                        num_calls += match call.operator() {
-                            CallOperator::Locator(locator) => stack
-                                .get_external_stack(locator.program_id())?
-                                .get_number_of_calls(locator.resource())?,
-                            CallOperator::Resource(resource) => stack.get_number_of_calls(resource)?,
-                        };
-                    }
-                }
-            }
-            // Check that the number of calls does not exceed the maximum.
-            // Note that one transition is reserved for the fee.
-            ensure!(
-                num_calls < ledger_block::Transaction::<N>::MAX_TRANSITIONS,
-                "Number of calls exceeds the maximum allowed number of transitions"
-            );
-            // Add the number of calls to the stack.
-            stack.number_of_calls.insert(*function.name(), num_calls);
+            // This includes a safety check for the maximum number of calls.
+            stack.get_number_of_calls(function.name())?;
 
             // Get the finalize cost.
             let finalize_cost = cost_in_microcredits_v2(&stack, function.name())?;
@@ -95,7 +63,6 @@ impl<N: Network> Stack<N> {
                 function.name(),
                 N::TRANSACTION_SPEND_LIMIT
             );
-            stack.finalize_costs.insert(*function.name(), finalize_cost);
         }
 
         // Return the stack.

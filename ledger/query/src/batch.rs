@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,7 +17,7 @@ use std::{collections::HashMap, sync::Arc};
 
 use console::{
     network::prelude::*,
-    prelude::{Error, Result, anyhow, bail},
+    prelude::{Result, anyhow, bail},
     program::StatePath,
     types::Field,
 };

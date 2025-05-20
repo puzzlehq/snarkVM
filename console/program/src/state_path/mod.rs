@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -66,13 +66,6 @@ pub struct StatePath<N: Network> {
     transition_path: TransitionPath<N>,
     /// The transition leaf.
     transition_leaf: TransitionLeaf<N>,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub struct StateProofsResponse<N: Network> {
-    pub block_height: u32,
-    pub global_state_root: N::StateRoot,
-    pub state_paths: Vec<StatePath<N>>,
 }
 
 impl<N: Network> StatePath<N> {

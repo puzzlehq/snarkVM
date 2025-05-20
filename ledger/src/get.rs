@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use crate::query::StateProofs;
 
 impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
     /// Returns the committee for the given `block height`.
@@ -75,24 +76,20 @@ impl<N: Network, C: ConsensusStorage<N>> Ledger<N, C> {
         self.vm.block_store().get_state_path_for_commitment(commitment)
     }
 
-    pub fn get_state_proofs_for_block(
-        &self,
-        block_height: u32,
-        commitments: &[Field<N>],
-    ) -> Result<StateProofsResponse<N>> {
-        // 1. Get current state root
+    pub fn get_state_proofs_for_block(&self, block_height: u32, commitments: &[Field<N>]) -> Result<StateProofs<N>> {
+        // Get current state root
         let global_state_root = self
             .get_state_root(block_height)?
             .ok_or_else(|| anyhow!("Missing state root for block {}", block_height))?;
 
-        // 2. Generate proofs for each commitment
+        // Get state paths for each commitment
         let state_paths: Vec<StatePath<N>> = commitments
             .iter()
             .map(|commitment| self.vm().block_store().get_state_path_for_commitment(commitment))
             .collect::<Result<Vec<_>>>()?;
 
-        // 3. Return block height, global state root, and state paths
-        Ok(StateProofsResponse { block_height, global_state_root, state_paths })
+        // Return block height, global state root, and state paths
+        Ok(StateProofs::new(block_height, global_state_root, state_paths))
     }
 
     /// Returns the epoch hash for the given block height.

@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -229,8 +229,8 @@ impl<N: Network, const VARIANT: u8> Display for AssertInstruction<N, VARIANT> {
             return Err(fmt::Error);
         }
         // Print the operation.
-        write!(f, "{} ", Self::opcode())?;
-        self.operands.iter().try_for_each(|operand| write!(f, "{operand} "))
+        write!(f, "{}", Self::opcode())?;
+        self.operands.iter().try_for_each(|operand| write!(f, " {operand}"))
     }
 }
 

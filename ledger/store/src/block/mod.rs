@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -772,6 +772,11 @@ pub trait BlockStorage<N: Network>: 'static + Clone + Send + Sync {
         }
     }
 
+    /// Returns true if there is a block that contains the specified certificate.
+    fn contains_block_for_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
+        self.certificate_map().contains_key_confirmed(certificate_id)
+    }
+
     /// Returns the batch certificate for the given `certificate ID`.
     fn get_batch_certificate(&self, certificate_id: &Field<N>) -> Result<Option<BatchCertificate<N>>> {
         // Retrieve the height and round for the given certificate ID.
@@ -1284,6 +1289,11 @@ impl<N: Network, B: BlockStorage<N>> BlockStore<N, B> {
     /// Returns the program for the given `program ID`.
     pub fn get_program(&self, program_id: &ProgramID<N>) -> Result<Option<Program<N>>> {
         self.storage.transaction_store().get_program(program_id)
+    }
+
+    /// Returns true if there is a block for the given certificate.
+    pub fn contains_block_for_certificate(&self, certificate_id: &Field<N>) -> Result<bool> {
+        self.storage.contains_block_for_certificate(certificate_id)
     }
 
     /// Returns the batch certificate for the given `certificate ID`.
