@@ -14,6 +14,7 @@
 // limitations under the License.
 
 use super::*;
+use snarkvm_utilities::{FromBytes, ToBytes};
 
 impl<N: Network> Serialize for StatePath<N> {
     /// Serializes the state path into string or bytes.

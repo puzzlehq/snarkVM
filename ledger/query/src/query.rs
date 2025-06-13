@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::QueryTrait;
+use crate::{InMemoryStateQuery, QueryTrait};
 use console::{
     network::prelude::*,
     program::{ProgramID, StatePath},
@@ -28,6 +28,8 @@ pub enum Query<N: Network, B: BlockStorage<N>> {
     VM(BlockStore<N, B>),
     /// The base URL of the node.
     REST(String),
+    /// The batch query.
+    Batch(InMemoryStateQuery<N>),
 }
 
 impl<N: Network, B: BlockStorage<N>> From<BlockStore<N, B>> for Query<N, B> {
@@ -78,6 +80,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(query) => query.current_state_root(),
         }
     }
 
@@ -98,6 +101,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(query) => query.current_state_root_async().await,
         }
     }
 
@@ -117,6 +121,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(query) => query.get_state_path_for_commitment(commitment),
         }
     }
 
@@ -137,6 +142,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(query) => query.get_state_path_for_commitment_async(commitment).await,
         }
     }
 
@@ -156,6 +162,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(query) => query.current_block_height(),
         }
     }
 
@@ -176,6 +183,7 @@ impl<N: Network, B: BlockStorage<N>> QueryTrait<N> for Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(query) => query.current_block_height_async().await,
         }
     }
 }
@@ -199,6 +207,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(_) => bail!("Program queries are not supported in batch mode"),
         }
     }
 
@@ -221,6 +230,7 @@ impl<N: Network, B: BlockStorage<N>> Query<N, B> {
                 }
                 _ => bail!("Unsupported network ID in inclusion query"),
             },
+            Self::Batch(_) => bail!("Program queries are not supported in batch mode"),
         }
     }
 

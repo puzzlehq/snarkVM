@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-ledger-query"
-version = "1.6.0"
+version = "3.7.1"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "A query for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -34,19 +34,30 @@ query = [ "ledger-store", "synthesizer-program", "ureq" ]
 [dependencies.console]
 package = "snarkvm-console"
 path = "../../console"
-version = "=1.6.0"
+version = "=3.7.1"
 
 [dependencies.ledger-store]
 package = "snarkvm-ledger-store"
 path = "../store"
-version = "=1.6.0"
+version = "=3.7.1"
 optional = true
 
 [dependencies.synthesizer-program]
 package = "snarkvm-synthesizer-program"
 path = "../../synthesizer/program"
-version = "=1.6.0"
+version = "=3.7.1"
 optional = true
+
+[dependencies.snarkvm-utilities]
+path = "../../utilities"
+version = "=3.7.1"
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+
+[dependencies.serde_json]
+version = "1.0"
 
 [dependencies.async-trait]
 version = "0.1"
