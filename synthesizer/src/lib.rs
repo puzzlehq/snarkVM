@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,6 +18,7 @@
 // TODO (howardwu): Update the return type on `execute` after stabilizing the interface.
 #![allow(clippy::type_complexity)]
 
+#[allow(unused_imports)] // Only needed for some features
 #[macro_use]
 extern crate tracing;
 

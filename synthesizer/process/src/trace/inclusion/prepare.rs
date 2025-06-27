@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -106,7 +106,7 @@ impl<N: Network> Inclusion<N> {
     pub fn prepare(
         &self,
         transitions: &[Transition<N>],
-        query: impl QueryTrait<N>,
+        query: &dyn QueryTrait<N>,
     ) -> Result<(Vec<InclusionAssignment<N>>, N::StateRoot)> {
         prepare_impl!(self, transitions, query, current_state_root, get_state_path_for_commitment)
     }
@@ -116,7 +116,7 @@ impl<N: Network> Inclusion<N> {
     pub async fn prepare_async(
         &self,
         transitions: &[Transition<N>],
-        query: impl QueryTrait<N>,
+        query: &dyn QueryTrait<N>,
     ) -> Result<(Vec<InclusionAssignment<N>>, N::StateRoot)> {
         prepare_impl!(self, transitions, query, current_state_root_async, get_state_path_for_commitment_async, await)
     }

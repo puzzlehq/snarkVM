@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -185,7 +185,7 @@ mod tests {
     type CurrentNetwork = snarkvm_console::network::MainnetV0;
 
     fn temp_dir() -> std::path::PathBuf {
-        tempfile::tempdir().expect("Failed to open temporary directory").into_path()
+        tempfile::tempdir().expect("Failed to open temporary directory").keep()
     }
 
     #[test]

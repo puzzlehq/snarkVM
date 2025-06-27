@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use crate::cli::commands::{Build, Clean, Execute, New, Run, Update};
+use crate::cli::commands::{Clean, Execute, New, Run, Update};
 
 use anstyle::{AnsiColor, Color, Style};
 use anyhow::Result;
@@ -39,8 +39,6 @@ pub struct CLI {
 
 #[derive(Debug, Parser)]
 pub enum Command {
-    #[clap(name = "build")]
-    Build(Build),
     #[clap(name = "clean")]
     Clean(Clean),
     #[clap(name = "execute")]
@@ -57,7 +55,6 @@ impl Command {
     /// Parse the command.
     pub fn parse(self) -> Result<String> {
         match self {
-            Self::Build(command) => command.parse(),
             Self::Clean(command) => command.parse(),
             Self::Execute(command) => command.parse(),
             Self::New(command) => command.parse(),

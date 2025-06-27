@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -31,7 +31,7 @@ impl<N: Network> DeployRequest<N> {
 
     /// Sends the request to the given endpoint.
     pub fn send(&self, endpoint: &str) -> Result<DeployResponse<N>> {
-        Ok(ureq::post(endpoint).send_json(self)?.into_json()?)
+        Ok(ureq::post(endpoint).send_json(self)?.body_mut().read_json()?)
     }
 
     /// Returns the program.

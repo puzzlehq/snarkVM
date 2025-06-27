@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -103,7 +103,7 @@ fn random_inversion_tests<F: Field, R: Rng>(rng: &mut R) {
 
     for _ in 0..ITERATIONS {
         let mut a = F::rand(rng);
-        let b = a.inverse().unwrap(); // probablistically nonzero
+        let b = a.inverse().unwrap(); // probabilistically nonzero
         a *= &b;
 
         assert_eq!(a, F::one());

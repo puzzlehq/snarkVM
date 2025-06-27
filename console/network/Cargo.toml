@@ -1,6 +1,6 @@
 [package]
 name = "snarkvm-console-network"
-version = "1.4.0"
+version = "3.8.0"
 authors = [ "The Aleo Team <hello@aleo.org>" ]
 description = "Network console library for a decentralized virtual machine"
 homepage = "https://aleo.org"
@@ -16,48 +16,40 @@ wasm = [
 ]
 test = [ ]
 test_targets = [ ]
+test_consensus_heights = [ ]
 
 [dependencies.snarkvm-algorithms]
 path = "../../algorithms"
-version = "=1.4.0"
+version = "=3.8.0"
 default-features = false
 features = [ "snark" ]
 
 [dependencies.snarkvm-console-algorithms]
 path = "../algorithms"
-version = "=1.4.0"
+version = "=3.8.0"
 
 [dependencies.snarkvm-console-collections]
 path = "../collections"
-version = "=1.4.0"
+version = "=3.8.0"
 
 [dependencies.snarkvm-console-network-environment]
 path = "./environment"
-version = "=1.4.0"
+version = "=3.8.0"
 
 [dependencies.snarkvm-console-types]
 path = "../types"
-version = "=1.4.0"
+version = "=3.8.0"
 default-features = false
 features = [ "field", "group", "scalar" ]
 
 [dependencies.snarkvm-curves]
 path = "../../curves"
-version = "=1.4.0"
-default-features = false
-
-[dependencies.snarkvm-fields]
-path = "../../fields"
-version = "=1.4.0"
+version = "=3.8.0"
 default-features = false
 
 [dependencies.snarkvm-parameters]
 path = "../../parameters"
-version = "=1.4.0"
-
-[dependencies.snarkvm-utilities]
-path = "../../utilities"
-version = "=1.4.0"
+version = "=3.8.0"
 
 [dependencies.anyhow]
 version = "1.0.73"
@@ -65,17 +57,17 @@ version = "1.0.73"
 [dependencies.indexmap]
 version = "2"
 
-[dependencies.itertools]
-version = "0.11.0"
-
 [dependencies.lazy_static]
 version = "1.4"
 
 [dependencies.once_cell]
 version = "1.18"
 
-[dependencies.paste]
-version = "1"
-
 [dependencies.serde]
 version = "1.0"
+
+[dependencies.paste]
+version = "1.0"
+
+[package.metadata.cargo-machete]
+ignored = ["paste"]

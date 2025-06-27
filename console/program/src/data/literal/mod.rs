@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -72,4 +72,29 @@ pub enum Literal<N: Network> {
     Signature(Box<Signature<N>>),
     /// The string type.
     String(StringType<N>),
+}
+
+macro_rules! impl_from {
+    ($($name: ident)*) => {
+        $(
+            impl<N: Network> From<$name<N>> for Literal<N> {
+                fn from(value: $name<N>) -> Self {
+                    Literal::$name(value)
+                }
+            }
+        )*
+    };
+}
+
+impl_from! {
+    Address Boolean Field Group
+    I8 I16 I32 I64 I128
+    U8 U16 U32 U64 U128
+    Scalar
+}
+
+impl<N: Network> From<Signature<N>> for Literal<N> {
+    fn from(value: Signature<N>) -> Self {
+        Literal::Signature(Box::new(value))
+    }
 }

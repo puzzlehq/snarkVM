@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -92,17 +92,11 @@ pub trait StackProgram<N: Network> {
     /// Returns the program ID.
     fn program_id(&self) -> &ProgramID<N>;
 
-    /// Returns the program depth.
-    fn program_depth(&self) -> usize;
-
     /// Returns the program address.
     fn program_address(&self) -> &Address<N>;
 
     /// Returns the external stack for the given program ID.
     fn get_external_stack(&self, program_id: &ProgramID<N>) -> Result<Arc<Self>>;
-
-    /// Returns the expected finalize cost for the given function name.
-    fn get_finalize_cost(&self, function_name: &Identifier<N>) -> Result<u64>;
 
     /// Returns the function with the given function name.
     fn get_function(&self, function_name: &Identifier<N>) -> Result<Function<N>>;

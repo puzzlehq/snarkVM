@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -276,6 +276,22 @@ pub mod test_helpers {
     ) -> BatchHeader<CurrentNetwork> {
         // Sample a private key.
         let private_key = PrivateKey::new(rng).unwrap();
+        // Generate a new certificated with the key as its author.
+        sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+            round,
+            &private_key,
+            previous_certificate_ids,
+            rng,
+        )
+    }
+
+    /// Returns a sample batch header with a given round, author key, and set of previous certificate IDs; the rest is sampled at random.
+    pub fn sample_batch_header_for_round_and_key_with_previous_certificate_ids(
+        round: u64,
+        private_key: &PrivateKey<CurrentNetwork>,
+        previous_certificate_ids: IndexSet<Field<CurrentNetwork>>,
+        rng: &mut TestRng,
+    ) -> BatchHeader<CurrentNetwork> {
         // Sample the committee ID.
         let committee_id = Field::<CurrentNetwork>::rand(rng);
         // Sample transmission IDs.
@@ -284,7 +300,7 @@ pub mod test_helpers {
         // Checkpoint the timestamp for the batch.
         let timestamp = OffsetDateTime::now_utc().unix_timestamp();
         // Return the batch header.
-        BatchHeader::new(&private_key, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, rng)
+        BatchHeader::new(private_key, round, timestamp, committee_id, transmission_ids, previous_certificate_ids, rng)
             .unwrap()
     }
 

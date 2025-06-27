@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -20,22 +20,25 @@ mod execute;
 mod is_build_required;
 mod run;
 
-pub use build::{BuildRequest, BuildResponse};
 pub use deploy::{DeployRequest, DeployResponse};
 
 use crate::{
+    algorithms::snark::varuna::VarunaVersion,
     console::{
         account::PrivateKey,
-        network::Network,
+        network::{ConsensusVersion, Network},
         program::{Identifier, Locator, ProgramID, Response, Value},
     },
     file::{AVMFile, AleoFile, Manifest, ProverFile, README, VerifierFile},
-    ledger::{block::Execution, query::Query, store::helpers::memory::BlockMemory},
+    ledger::{
+        block::Execution,
+        query::{Query, QueryTrait},
+        store::helpers::memory::BlockMemory,
+    },
     prelude::{Deserialize, Deserializer, Serialize, SerializeStruct, Serializer},
     synthesizer::{
         process::{Assignments, CallMetrics, CallStack, Process, StackExecute},
         program::{CallOperator, Instruction, Program, StackProgram},
-        snark::{ProvingKey, VerifyingKey},
     },
 };
 
@@ -188,7 +191,7 @@ pub(crate) mod test_helpers {
     type CurrentNetwork = MainnetV0;
 
     fn temp_dir() -> PathBuf {
-        tempfile::tempdir().expect("Failed to open temporary directory").into_path()
+        tempfile::tempdir().expect("Failed to open temporary directory").keep()
     }
 
     /// Samples a (temporary) package containing a `token.aleo` program.
@@ -545,7 +548,7 @@ function bar:
         // Ensure the build directory does *not* exist.
         assert!(!package.build_directory().exists());
         // Build the package.
-        package.build::<CurrentAleo>(None).unwrap();
+        package.build::<CurrentAleo>().unwrap();
         // Ensure the build directory exists.
         assert!(package.build_directory().exists());
 

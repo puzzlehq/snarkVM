@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -43,13 +43,14 @@ mod verify_fee;
 #[cfg(test)]
 mod tests;
 
+use algorithms::snark::varuna::VarunaVersion;
 use console::{
     account::PrivateKey,
     network::prelude::*,
     program::{Identifier, Literal, Locator, Plaintext, ProgramID, Record, Response, Value, compute_function_id},
     types::{Field, U16, U64},
 };
-use ledger_block::{Deployment, Execution, Fee, Input, Output, Transition};
+use ledger_block::{Deployment, Execution, Fee, Input, Output, Transaction, Transition};
 use ledger_store::{FinalizeStorage, FinalizeStore, atomic_batch_scope};
 use synthesizer_program::{
     Branch,
@@ -339,13 +340,13 @@ pub mod test_helpers {
         let block_store = BlockStore::<CurrentNetwork, BlockMemory<_>>::open(StorageMode::new_test(None)).unwrap();
 
         // Prepare the assignments from the block store.
-        trace.prepare(ledger_query::Query::from(block_store)).unwrap();
+        trace.prepare(&ledger_query::Query::from(block_store)).unwrap();
 
         // Get the locator.
         let locator = format!("{:?}:{function_name:?}", program.id());
 
         // Return the execution object.
-        trace.prove_execution::<CurrentAleo, _>(&locator, rng).unwrap()
+        trace.prove_execution::<CurrentAleo, _>(&locator, VarunaVersion::V1, rng).unwrap()
     }
 
     pub fn sample_key() -> (Identifier<CurrentNetwork>, ProvingKey<CurrentNetwork>, VerifyingKey<CurrentNetwork>) {
@@ -439,9 +440,9 @@ function compute:
                 assert_eq!(trace.transitions().len(), 1);
 
                 // Prepare the trace.
-                trace.prepare(Query::from(block_store)).unwrap();
+                trace.prepare(&Query::from(block_store)).unwrap();
                 // Compute the execution.
-                trace.prove_execution::<CurrentAleo, _>("testing", rng).unwrap()
+                trace.prove_execution::<CurrentAleo, _>("testing", VarunaVersion::V1, rng).unwrap()
             })
             .clone()
     }

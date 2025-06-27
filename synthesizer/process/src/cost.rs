@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,11 +15,12 @@
 
 use crate::{Process, Stack, StackProgramTypes};
 
+use crate::stack::StackRef;
 use console::{
     prelude::*,
     program::{FinalizeType, Identifier, LiteralType, PlaintextType},
 };
-use ledger_block::{Deployment, Execution};
+use ledger_block::{Deployment, Execution, Transaction};
 use synthesizer_program::{CastType, Command, Finalize, Instruction, Operand, StackProgram};
 
 /// Returns the *minimum* cost in microcredits to publish the given deployment (total cost, (storage cost, synthesis cost, namespace cost)).
@@ -67,7 +68,8 @@ pub fn execution_cost_v2<N: Network>(process: &Process<N>, execution: &Execution
     let transition = execution.peek()?;
 
     // Get the finalize cost for the root transition.
-    let finalize_cost = process.get_stack(transition.program_id())?.get_finalize_cost(transition.function_name())?;
+    let stack = process.get_stack(transition.program_id())?;
+    let finalize_cost = cost_in_microcredits_v2(&stack, transition.function_name())?;
 
     // Compute the total cost in microcredits.
     let total_cost = storage_cost
@@ -121,6 +123,7 @@ const HASH_BHP_PER_BYTE_COST: u64 = 300;
 const HASH_PSD_BASE_COST: u64 = 40_000;
 const HASH_PSD_PER_BYTE_COST: u64 = 75;
 
+#[derive(Copy, Clone)]
 pub enum ConsensusFeeVersion {
     V1,
     V2,
@@ -404,60 +407,58 @@ pub fn cost_per_command<N: Network>(
 
 /// Returns the minimum number of microcredits required to run the finalize.
 pub fn cost_in_microcredits_v2<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    // Retrieve the finalize logic.
-    let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {
-        // Return a finalize cost of 0, if the function does not have a finalize scope.
-        return Ok(0);
-    };
-    // Get the cost of finalizing all futures.
-    let mut future_cost = 0u64;
-    for input in finalize.inputs() {
-        if let FinalizeType::Future(future) = input.finalize_type() {
-            // Get the external stack for the future.
-            let stack = stack.get_external_stack(future.program_id())?;
-            // Accumulate the finalize cost of the future.
-            future_cost = future_cost
-                .checked_add(stack.get_finalize_cost(future.resource())?)
-                .ok_or(anyhow!("Finalize cost overflowed"))?;
-        }
-    }
-    // Aggregate the cost of all commands in the program.
-    finalize
-        .commands()
-        .iter()
-        .map(|command| cost_per_command(stack, finalize, command, ConsensusFeeVersion::V2))
-        .try_fold(future_cost, |acc, res| {
-            res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
-        })
+    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V2)
 }
 
-/// Returns the minimum number of microcredits required to run the finalize (depcrated).
+/// Returns the minimum number of microcredits required to run the finalize (deprecated).
 pub fn cost_in_microcredits_v1<N: Network>(stack: &Stack<N>, function_name: &Identifier<N>) -> Result<u64> {
-    // Retrieve the finalize logic.
-    let Some(finalize) = stack.get_function_ref(function_name)?.finalize_logic() else {
-        // Return a finalize cost of 0, if the function does not have a finalize scope.
-        return Ok(0);
-    };
-    // Get the cost of finalizing all futures.
-    let mut future_cost = 0u64;
-    for input in finalize.inputs() {
-        if let FinalizeType::Future(future) = input.finalize_type() {
-            // Get the external stack for the future.
-            let stack = stack.get_external_stack(future.program_id())?;
-            // Accumulate the finalize cost of the future.
-            future_cost = future_cost
-                .checked_add(cost_in_microcredits_v1(&stack, future.resource())?)
-                .ok_or(anyhow!("Finalize cost overflowed"))?;
+    cost_in_microcredits(stack, function_name, ConsensusFeeVersion::V1)
+}
+
+// A helper function to compute the cost in microcredits for a given function.
+fn cost_in_microcredits<N: Network>(
+    stack: &Stack<N>,
+    function_name: &Identifier<N>,
+    consensus_fee_version: ConsensusFeeVersion,
+) -> Result<u64> {
+    // Initialize the base cost.
+    let mut finalize_cost = 0u64;
+    // Initialize a queue of finalize blocks to tally.
+    let mut finalizes = vec![(StackRef::Internal(stack), *function_name)];
+    // Initialize a counter for the number of finalize blocks seen.
+    let mut num_finalizes = 1;
+    // Iterate over the finalize blocks.
+    while let Some((stack_ref, function_name)) = finalizes.pop() {
+        // Ensure that the number of finalize blocks does not exceed the maximum.
+        // Note that one transition is reserved for the fee.
+        ensure!(
+            num_finalizes < Transaction::<N>::MAX_TRANSITIONS,
+            "The number of finalize blocks must be less than '{}'",
+            Transaction::<N>::MAX_TRANSITIONS
+        );
+        // Get the finalize logic. If the function does not have a finalize scope then no cost is incurred.
+        if let Some(finalize) = stack_ref.get_function_ref(&function_name)?.finalize_logic() {
+            // Queue the futures to be tallied.
+            for input in finalize.inputs() {
+                if let FinalizeType::Future(future) = input.finalize_type() {
+                    // Get the external stack for the future.
+                    let external_stack = stack_ref.get_external_stack(future.program_id())?;
+                    // Increment the number of finalize blocks seen.
+                    num_finalizes += 1;
+                    // Queue the future.
+                    finalizes.push((StackRef::External(external_stack), *future.resource()));
+                }
+            }
+            // Iterate over the commands in the finalize block.
+            for command in finalize.commands() {
+                // Sum the cost of all commands in the current future into the total running cost.
+                finalize_cost = finalize_cost
+                    .checked_add(cost_per_command(&stack_ref, finalize, command, consensus_fee_version)?)
+                    .ok_or(anyhow!("Finalize cost overflowed"))?;
+            }
         }
     }
-    // Aggregate the cost of all commands in the program.
-    finalize
-        .commands()
-        .iter()
-        .map(|command| cost_per_command(stack, finalize, command, ConsensusFeeVersion::V1))
-        .try_fold(future_cost, |acc, res| {
-            res.and_then(|x| acc.checked_add(x).ok_or(anyhow!("Finalize cost overflowed")))
-        })
+    Ok(finalize_cost)
 }
 
 #[cfg(test)]

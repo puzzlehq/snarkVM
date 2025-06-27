@@ -1,4 +1,4 @@
-// Copyright 2024-2025 Aleo Network Foundation
+// Copyright (c) 2019-2025 Provable Inc.
 // This file is part of the snarkVM library.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
@@ -19,11 +19,17 @@ impl<N: Network> Process<N> {
     /// Verifies the given execution is valid.
     /// Note: This does *not* check that the global state root exists in the ledger.
     #[inline]
-    pub fn verify_execution(&self, execution: &Execution<N>) -> Result<()> {
+    pub fn verify_execution(&self, varuna_version: VarunaVersion, execution: &Execution<N>) -> Result<()> {
         let timer = timer!("Process::verify_execution");
 
         // Ensure the execution contains transitions.
         ensure!(!execution.is_empty(), "There are no transitions in the execution");
+        // Ensure that the execution does not exceed the maximum number of transitions.
+        ensure!(
+            execution.len() < Transaction::<N>::MAX_TRANSITIONS,
+            "The number of transitions in an execution must be less than '{}'",
+            Transaction::<N>::MAX_TRANSITIONS
+        );
 
         // Ensure the number of transitions matches the program function.
         let locator = {
@@ -159,7 +165,7 @@ impl<N: Network> Process<N> {
         // Construct the list of verifier inputs.
         let verifier_inputs: Vec<_> = verifier_inputs.values().cloned().collect();
         // Verify the execution proof.
-        Trace::verify_execution_proof(&locator, verifier_inputs, execution)?;
+        Trace::verify_execution_proof(&locator, varuna_version, verifier_inputs, execution)?;
 
         lap!(timer, "Verify the proof");
 
