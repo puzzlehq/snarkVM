@@ -50,7 +50,7 @@ optional = true
 
 [dependencies.snarkvm-utilities]
 path = "../../utilities"
-version = "=3.7.1"
+version = "=3.8.0"
 
 [dependencies.serde]
 version = "1.0"
